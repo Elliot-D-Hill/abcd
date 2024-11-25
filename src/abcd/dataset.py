@@ -1,8 +1,7 @@
-from torch import tensor
-from lightning import LightningDataModule
-from torch.utils.data import Dataset, DataLoader
-from torch.nn.utils.rnn import pad_sequence
 import polars as pl
+from lightning import LightningDataModule
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import DataLoader, Dataset
 
 
 def make_tensor_dataset(dataset: pl.DataFrame):
@@ -10,9 +9,8 @@ def make_tensor_dataset(dataset: pl.DataFrame):
     for subject in dataset.partition_by(
         "src_subject_id", maintain_order=True, include_key=False
     ):
-        label = subject.drop_in_place("y_{t+1}")
-        label = tensor(label.to_numpy()).float()
-        features = tensor(subject.to_numpy()).float()
+        label = subject.drop_in_place("y_{t+1}").to_torch().float()
+        features = subject.to_torch(dtype=pl.Float32)
         data.append((features, label))
     return data
 

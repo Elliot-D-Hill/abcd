@@ -3,7 +3,8 @@ import polars.selectors as cs
 from sklearn import set_config
 
 from abcd.config import Config, Features, get_config
-from abcd.preprocess import get_dataset, get_datasets
+from abcd.preprocess import get_datasets
+from abcd.transform import get_dataset
 
 
 def rename_questions() -> pl.Expr:
@@ -44,9 +45,10 @@ def rename_datasets() -> pl.Expr:
     )
 
 
-def make_variable_df(dfs: list[pl.DataFrame], features: Features) -> pl.DataFrame:
+def make_variable_df(dfs: list[pl.LazyFrame], features: Features) -> pl.DataFrame:
     metadata_dfs: list[pl.DataFrame] = []
     for df, (filename, metadata) in zip(dfs, features.model_dump().items()):
+        df = df.collect()
         table_metadata = {"table": [], "dataset": [], "respondent": [], "variable": []}
         for column in df.columns:
             table_metadata["table"].append(filename)
@@ -74,7 +76,7 @@ def format_questions() -> pl.Expr:
     )
 
 
-def make_variable_metadata(dfs: list[pl.DataFrame], features: Features):
+def make_variable_metadata(dfs: list[pl.LazyFrame], features: Features):
     variables = make_variable_df(dfs=dfs, features=features)
     df = pl.read_csv(
         "data/raw/abcd_data_dictionary.csv",
@@ -155,15 +157,15 @@ def make_subject_metadata(splits: dict[str, pl.DataFrame]) -> pl.DataFrame:
     return df
 
 
-def make_metadata(config: Config):
-    datasets = get_datasets(config=config)
-    make_variable_metadata(dfs=datasets, features=config.features)
-    splits = get_dataset(analysis="metadata", factor_model="within_year", config=config)
+def make_metadata(cfg: Config):
+    datasets = get_datasets(cfg=cfg)
+    make_variable_metadata(dfs=datasets, features=cfg.features)
+    splits = get_dataset(cfg=cfg)
     metadata = make_subject_metadata(splits=splits)
-    metadata.write_csv(config.filepaths.data.raw.metadata)
+    metadata.write_csv(cfg.filepaths.data.raw.metadata)
 
 
 if __name__ == "__main__":
     set_config(transform_output="polars")
-    config = get_config(analysis="metadata")
-    make_metadata(config=config)
+    cfg = get_config(analysis="metadata", factor_model="within_event")
+    make_metadata(cfg=cfg)

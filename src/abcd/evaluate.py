@@ -1,28 +1,29 @@
 from functools import partial
 from typing import Callable
-import torch
+
 import polars as pl
+import torch
 from torchmetrics.classification import (
     MulticlassAUROC,
     MulticlassAveragePrecision,
-    MulticlassSpecificityAtSensitivity,
     MulticlassSensitivityAtSpecificity,
+    MulticlassSpecificityAtSensitivity,
 )
+from torchmetrics.functional import precision_recall_curve, roc
 from torchmetrics.wrappers import BootStrapper
-from torchmetrics.functional import roc, precision_recall_curve
 
-from abcd.config import Config
+from abcd.cfg import Config
 from abcd.dataset import ABCDDataModule
 from abcd.model import Network, make_trainer
 
 
-def make_predictions(config: Config, model: Network, data_module: ABCDDataModule):
-    trainer = make_trainer(config, checkpoint=False)
+def make_predictions(cfg: Config, model: Network, data_module: ABCDDataModule):
+    trainer = make_trainer(cfg, checkpoint=False)
     predictions = trainer.predict(model, dataloaders=data_module.test_dataloader())
     outputs, labels = zip(*predictions)
     outputs = torch.concat(outputs).cpu()
     labels = torch.concat(labels).cpu()
-    metadata = pl.read_csv(config.filepaths.data.raw.metadata)
+    metadata = pl.read_csv(cfg.filepaths.data.raw.metadata)
     test_metadata = metadata.filter(pl.col("Split").eq("test"))
     df = pl.DataFrame({"output": outputs.cpu().numpy(), "label": labels.cpu().numpy()})
     return pl.concat([test_metadata, df], how="horizontal")
@@ -157,14 +158,14 @@ def make_prevalence(df: pl.DataFrame):
     ).select(["Variable", "Group", "Quartile at t+1", "Prevalence"])
 
 
-def evaluate_model(data_module: ABCDDataModule, config: Config, model: Network):
-    model.to(config.device)
-    config.filepaths.data.results.metrics.mkdir(parents=True, exist_ok=True)
-    if config.predict or not config.filepaths.data.results.predictions.is_file():
-        df = make_predictions(config=config, model=model, data_module=data_module)
-        df.write_parquet(config.filepaths.data.results.predictions)
+def evaluate_model(data_module: ABCDDataModule, cfg: Config, model: Network):
+    model.to(cfg.device)
+    cfg.filepaths.data.results.metrics.mkdir(parents=True, exist_ok=True)
+    if cfg.predict or not cfg.filepaths.data.results.predictions.is_file():
+        df = make_predictions(cfg=cfg, model=model, data_module=data_module)
+        df.write_parquet(cfg.filepaths.data.results.predictions)
     else:
-        df = pl.read_parquet(config.filepaths.data.results.predictions)
+        df = pl.read_parquet(cfg.filepaths.data.results.predictions)
     df = df.with_columns(
         pl.when(pl.col("Quartile at t").eq(4))
         .then(pl.lit("Persistence"))
@@ -193,10 +194,10 @@ def evaluate_model(data_module: ABCDDataModule, config: Config, model: Network):
     grouped_df = df.group_by("Variable", "Group", maintain_order=True)
     prevalence = make_prevalence(df)
     metrics = grouped_df.map_groups(
-        partial(make_metrics, n_bootstraps=config.n_bootstraps)
+        partial(make_metrics, n_bootstraps=cfg.n_bootstraps)
     )
     metrics = metrics.join(prevalence, on=["Variable", "Group", "Quartile at t+1"])
-    metrics.write_csv(config.filepaths.data.results.metrics / "metrics.csv")
+    metrics.write_csv(cfg.filepaths.data.results.metrics / "metrics.csv")
     pr_curve = grouped_df.map_groups(
         partial(make_curve, curve=precision_recall_curve, name="PR")
     )
@@ -204,8 +205,8 @@ def evaluate_model(data_module: ABCDDataModule, config: Config, model: Network):
     curves = pl.concat([pr_curve, roc_curve], how="diagonal_relaxed").select(
         ["Metric", "Variable", "Group", "Quartile at t+1", "x", "y"]
     )
-    curves.write_csv(config.filepaths.data.results.metrics / "curves.csv")
+    curves.write_csv(cfg.filepaths.data.results.metrics / "curves.csv")
     sens_spec = calc_sensitivity_and_specificity(df=df)
     sens_spec.write_csv(
-        config.filepaths.data.results.metrics / "sensitivity_specificity.csv"
+        cfg.filepaths.data.results.metrics / "sensitivity_specificity.csv"
     )

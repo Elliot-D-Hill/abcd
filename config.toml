@@ -3,35 +3,45 @@ random_seed = 42
 regenerate = true
 tune = true
 log = false
-predict = true
-evaluate = true
-shap = true
-plot = true
-tables = true
+predict = false
+evaluate = false
+shap = false
+plot = false
+tables = false
 verbose = false
-n_trials = 32
+n_trials = 128
 n_bootstraps = 1000
 join_on = ["src_subject_id", "eventname"]
-factor_models = ["within_event", "across_event"]
+factor_models = ["within_event"] # , "across_event", "ksads"]
+factor_model = "within_event"
 analyses = [
-    "questions",
-    "questions_mri",
-    "questions_symptoms",
-    "symptoms",
-    "questions_mri_symptoms",
-    "autoregressive",
+    "mri",
+    # "questions",
+    # "questions_mri",
+    # "questions_symptoms",
+    # "symptoms",
+    # "questions_mri_symptoms",
+    # "autoregressive",
 ]
+analysis = "mri"
 device = "mps"
+sampler = "tpe"
 
 [filepaths]
 tables = "data/tables/"
 plots = "data/plots/"
 [filepaths.data]
 [filepaths.data.raw]
+labels = "data/raw/features/mh_p_cbcl.csv"
 dataset = "data/raw/dataset.csv"
 metadata = "data/raw/metadata.csv"
 features = "data/raw/features/"
+mri = "data/raw/mri"
 splits = "data/raw/splits/"
+[filepaths.data.processed]
+labels = "data/processed/labels.csv"
+features = "data/processed/features.csv"
+dataset = "data/processed/dataset.csv"
 [filepaths.data.analytic]
 train = "analytic/train.csv"
 val = "analytic/val.csv"
@@ -49,30 +59,51 @@ n_quantiles = 4
 train_size = 0.8
 
 [training]
-batch_size = 2048
-max_epochs = 200
+batch_size = 1028
 gradient_clip = 1.0
+[training.max_epochs]
+name = "max_epochs"
+low = 5
+high = 100
 
 [optimizer]
-momentum = 0.99
 nesterov = true
+[optimizer.momentum]
+name = "momentum"
+low = 0.9
+high = 0.99
 [optimizer.lr]
-low = 1e-4
+name = "lr"
+low = 1e-5
 high = 1e-2
 log = true
 [optimizer.weight_decay]
+name = "weight_decay"
+low = 1e-8
+high = 1e-2
+log = true
+[optimizer.lambda_l1]
+name = "lambda_l1"
 low = 1e-8
 high = 1e-2
 log = true
 
 [model]
-hidden_dim = [64, 128, 256, 512]
+[model.method]
+name = "method"
+choices = ["mlp", "rnn", "lstm", "transformer"]
+[model.hidden_dim]
+name = "hidden_dim"
+low = 32
+high = 256
 [model.dropout]
+name = "dropout"
 low = 0.0
 high = 0.75
 [model.num_layers]
+name = "num_layers"
 low = 1
-high = 5
+high = 3
 
 [logging]
 checkpoint_every_n_steps = 1

@@ -1,7 +1,8 @@
-from tomllib import load
-from pydantic import BaseModel
-from pathlib import Path
 from copy import deepcopy
+from pathlib import Path
+
+from pydantic import BaseModel
+from tomllib import load
 
 
 class Splits(BaseModel):
@@ -11,10 +12,18 @@ class Splits(BaseModel):
 
 
 class Raw(BaseModel):
+    labels: Path
     dataset: Path
     metadata: Path
     features: Path
+    mri: Path
     splits: Path
+
+
+class Processed(BaseModel):
+    labels: Path
+    features: Path
+    dataset: Path
 
 
 class Results(BaseModel):
@@ -27,6 +36,7 @@ class Results(BaseModel):
 
 class Data(BaseModel):
     raw: Raw
+    processed: Processed
     analytic: Splits
     results: Results
 
@@ -45,8 +55,8 @@ class Preprocess(BaseModel):
 
 class Training(BaseModel):
     batch_size: int
-    max_epochs: int
     gradient_clip: float
+    max_epochs: dict
 
 
 class Logging(BaseModel):
@@ -55,16 +65,18 @@ class Logging(BaseModel):
 
 
 class Optimizer(BaseModel):
-    lr: dict[str, float | bool]
-    weight_decay: dict[str, float | bool]
-    momentum: float
+    lr: dict
+    weight_decay: dict
+    lambda_l1: dict
+    momentum: dict
     nesterov: bool
 
 
 class Model(BaseModel):
-    hidden_dim: list[int]
-    num_layers: dict[str, int]
-    dropout: dict[str, float]
+    method: dict
+    hidden_dim: dict
+    num_layers: dict
+    dropout: dict
 
 
 class Dataset(BaseModel):
@@ -116,8 +128,11 @@ class Config(BaseModel):
     n_trials: int
     join_on: list[str]
     analyses: list[str]
+    analysis: str
     factor_models: list[str]
+    factor_model: str
     device: str
+    sampler: str
     filepaths: Filepaths
     preprocess: Preprocess
     features: Features
@@ -127,29 +142,31 @@ class Config(BaseModel):
     model: Model
 
 
-def update_paths(new_path: Path, config: Config) -> Config:
-    analytic = deepcopy(config.filepaths.data.analytic.model_dump())
+def update_paths(new_path: Path, cfg: Config) -> Config:
+    analytic = deepcopy(cfg.filepaths.data.analytic.model_dump())
     for name, path in analytic.items():
         new_filepath = new_path / path
         new_filepath.parent.mkdir(parents=True, exist_ok=True)
         analytic[name] = new_filepath
-    config.filepaths.data.analytic = Splits(**analytic)
-    results = deepcopy(config.filepaths.data.results.model_dump())
+    cfg.filepaths.data.analytic = Splits(**analytic)
+    results = deepcopy(cfg.filepaths.data.results.model_dump())
     for name, path in results.items():
         new_filepath = new_path / path
         new_filepath.parent.mkdir(parents=True, exist_ok=True)
         results[name] = new_filepath
-    config.filepaths.data.results = Results(**results)
-    return config
+    cfg.filepaths.data.results = Results(**results)
+    return cfg
 
 
-def get_config(analysis: str | None = None, factor_model: str | None = None) -> Config:
-    with open("config.toml", "rb") as f:
-        config = Config(**load(f))
+def get_config(factor_model: str, analysis: str | None = None) -> Config:
+    with open("cfg.toml", "rb") as f:
+        cfg = Config(**load(f))
     if analysis is None:
-        return config
+        return cfg
     elif analysis == "metadata":
         new_path = Path("data/analyses/metadata")
     else:
         new_path = Path(f"data/analyses/{factor_model}/{analysis}")
-    return update_paths(new_path=new_path, config=config)
+    cfg.analysis = analysis
+    cfg.factor_model = factor_model
+    return update_paths(new_path=new_path, cfg=cfg)

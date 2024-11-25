@@ -25,7 +25,7 @@ wheels/
 pip-wheel-metadata/
 share/python-wheels/
 *.egg-info/
-.installed.cfg
+.installed.cfg.
 *.egg
 MANIFEST
 
@@ -81,7 +81,7 @@ target/
 
 # IPython
 profile_default/
-ipython_config.py
+ipython_cfg.py
 
 # pyenv
 .python-version

@@ -4,7 +4,7 @@ import polars as pl
 def p_factor_stats():
     df = (
         pl.read_csv("data/labels/p_factors.csv")
-        .pivot(values="p_factor", columns="eventname", index="src_subject_id")
+        .pivot(values="p_factor", on="eventname", index="src_subject_id")
         .select(pl.col(pl.Float64))
         .to_pandas()
         .corr()
@@ -30,6 +30,5 @@ if __name__ == "__main__":
     )
     print(mean_num_observations)
     print((df["interview_age"] / 12).describe())
-
-    # p_factor_stats()
-    # missingness_stats()
+    p_factor_stats()
+    missingness_stats()

@@ -1,15 +1,16 @@
 from functools import partial
+
+import polars as pl
+import torch
+from captum.attr import GradientShap
 from lightning import LightningDataModule
 from sklearn.linear_model import LinearRegression
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils import resample
-import polars as pl
-import torch
 from tqdm import tqdm
-from captum.attr import GradientShap
 
-from abcd.config import Config, get_config
+from abcd.cfg import Config, get_cfg
 
 
 def predict(x, model):
@@ -41,18 +42,18 @@ def regress_shap_values(df: pl.DataFrame, groups: list[str] | str, n_bootstraps:
 
 
 def make_shap(
-    config: Config,
+    cfg: Config,
     model,
     data_module: LightningDataModule,
     analysis: str,
     factor_model: str,
 ):
-    config = get_config(analysis=analysis, factor_model=factor_model)
+    cfg = get_cfg(analysis=analysis, factor_model=factor_model)
     test_dataloader = iter(data_module.test_dataloader())
     X = torch.cat([x for x, _ in test_dataloader])
     val_dataloader = iter(data_module.val_dataloader())
     background = torch.cat([x for x, _ in val_dataloader])
-    features = pl.read_csv(config.filepaths.data.analytic.test).drop(["y_{t+1}"])
+    features = pl.read_csv(cfg.filepaths.data.analytic.test).drop(["y_{t+1}"])
     subject_id = (
         features.select("src_subject_id")
         .unique(subset="src_subject_id", maintain_order=True)

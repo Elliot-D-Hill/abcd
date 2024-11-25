@@ -1,12 +1,12 @@
+import textwrap
+
 import matplotlib.pyplot as plt
 import polars as pl
+import polars.selectors as cs
 import seaborn as sns
 from toml import load
-import polars.selectors as cs
 
-import textwrap
-from abcd.config import Config
-
+from abcd.cfg import Config
 
 FORMAT = "pdf"
 
@@ -173,8 +173,10 @@ def shap_plot(
     plt.savefig(f"{filepath}.{FORMAT}", format=FORMAT)
 
 
-def grouped_shap_plot(filepath: str, analysis: str, factor_model: str):
-    plt.figure(figsize=(16, 8))
+def grouped_shap_plot(
+    filepath: str, analysis: str, factor_model: str, figsize: tuple[int, int]
+):
+    plt.figure(figsize=figsize)
     df = pl.read_csv(f"data/analyses/{factor_model}/{analysis}/results/shap_values.csv")
     n_bootstraps = 1000
     dfs = []
@@ -201,6 +203,10 @@ def grouped_shap_plot(filepath: str, analysis: str, factor_model: str):
         order=order,
         errorbar="pi",
     )
+    g.set_yticks(g.get_yticks())
+    labels = [textwrap.fill(label.get_text(), 28) for label in g.get_yticklabels()]
+    g.set_yticklabels(labels)
+    # g.yaxis.grid(True)
     sns.move_legend(g, "lower right")
     g.set(ylabel="Predictor category", xlabel="Summed SHAP value")
     g.yaxis.grid(True)
@@ -247,36 +253,37 @@ def p_factor_model_comparison():
     )
 
 
-def plot(config):
+def plot(cfg):
     sns.set_theme(style="darkgrid", palette="deep", font_scale=2.0)
-    sns.set_context("paper", font_scale=2.0)
+    sns.set_context("paper", font_scale=1.4)
 
-    quartile_curves()
+    # quartile_curves()
     grouped_shap_plot(
-        filepath="data/figures/figure_2",
+        filepath="data/figures/small_figure_2",
         analysis="questions",
         factor_model="within_event",
+        figsize=(7, 4),
     )
-    analysis_comparison()
-    shap_plot(
-        filepath="data/supplement/figures/supplementary_figure_2",
-        analysis="symptoms",
-        factor_model="within_event",
-        textwrap_width=75,
-        y_axis_label="CBCL syndrome scale (t-score)",
-        figsize=(16, 8),
-    )
-    shap_plot(
-        filepath="data/supplement/figures/supplementary_figure_3",
-        analysis="questions",
-        factor_model="within_event",
-        textwrap_width=75,
-        y_axis_label="Question",
-        figsize=(24, 16),
-    )
-    p_factor_model_comparison()
+    # analysis_comparison()
+    # shap_plot(
+    #     filepath="data/supplement/figures/supplementary_figure_2",
+    #     analysis="symptoms",
+    #     factor_model="within_event",
+    #     textwrap_width=75,
+    #     y_axis_label="CBCL syndrome scale (t-score)",
+    #     figsize=(16, 8),
+    # )
+    # shap_plot(
+    #     filepath="data/supplement/figures/supplementary_figure_3",
+    #     analysis="questions",
+    #     factor_model="within_event",
+    #     textwrap_width=75,
+    #     y_axis_label="Question",
+    #     figsize=(24, 16),
+    # )
+    # p_factor_model_comparison()
 
 
 if __name__ == "__main__":
-    config = Config(**load("config.toml"))
-    plot(config)
+    cfg = Config(**load("cfg.toml"))
+    plot(cfg)

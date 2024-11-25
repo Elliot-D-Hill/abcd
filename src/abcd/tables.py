@@ -1,8 +1,9 @@
 from itertools import product
+
 import polars as pl
 import polars.selectors as cs
 
-from abcd.config import Config, get_config
+from abcd.cfg import Config, get_cfg
 
 GROUP_ORDER = pl.Enum(
     [
@@ -205,9 +206,9 @@ def make_shap_table(analysis: str, factor_model: str):
     return df
 
 
-def make_tables(config: Config):
+def make_tables(cfg: Config):
     cross_tab = cross_tabulation()
-    aggregate_metrics(analyses=config.analyses, factor_models=config.factor_models)
+    aggregate_metrics(analyses=cfg.analyses, factor_models=cfg.factor_models)
     df = pl.scan_parquet("data/results/metrics/metrics.parquet")
     groups = ["Factor model", "Predictor set", "Metric", "Variable", "Group"]
     make_metric_table(df=df, groups=groups)
@@ -229,5 +230,5 @@ def make_tables(config: Config):
 
 
 if __name__ == "__main__":
-    config = get_config()
-    make_tables(config)
+    cfg = get_cfg()
+    make_tables(cfg)
