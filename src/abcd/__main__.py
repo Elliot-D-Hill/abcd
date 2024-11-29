@@ -5,7 +5,7 @@ from lightning import seed_everything
 from sklearn import set_config
 from tqdm import tqdm
 
-from abcd.config import Analyses, get_config
+from abcd.config import Experiment, get_config
 from abcd.dataset import ABCDDataModule
 from abcd.evaluate import evaluate_model
 from abcd.importance import make_shap
@@ -17,7 +17,7 @@ from abcd.transform import get_dataset
 from abcd.tune import tune
 
 
-def make_experiment(cfg: Analyses):
+def make_experiment(cfg: Experiment):
     analyses = product(cfg.analyses, cfg.factor_models)
     return tqdm(analyses, total=len(cfg.analyses) * len(cfg.factor_models))
 
@@ -29,8 +29,7 @@ def main():
     if cfg.regenerate:
         make_metadata(cfg=cfg)
     seed_everything(cfg.random_seed)
-
-    experiment = make_experiment(cfg=cfg.analyses)
+    experiment = make_experiment(cfg=cfg.experiment)
     for analysis, factor_model in experiment:
         if not any(
             [

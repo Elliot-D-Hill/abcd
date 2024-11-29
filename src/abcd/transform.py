@@ -3,7 +3,7 @@ import polars.selectors as cs
 from nanuk.transform import impute, pipeline, standardize
 
 from abcd.config import Config
-from abcd.preprocess import generate_data
+from abcd.process import generate_data
 
 
 def get_brain_features(cfg: Config):
@@ -25,7 +25,7 @@ def get_brain_features(cfg: Config):
 def get_features(df: pl.DataFrame, cfg: Config):
     brain_features = get_brain_features(cfg)
     exclude = [cfg.index.sample_id, "race_ethnicity", "interview_date"]
-    match cfg.analyses.analysis:
+    match cfg.experiment.analysis:
         case "metadata":
             df = df.select(cs.all())
         case "mri":
@@ -43,7 +43,7 @@ def get_features(df: pl.DataFrame, cfg: Config):
         case "questions_mri_symptoms":
             df = df.select(cs.exclude(exclude))
         case _:
-            raise ValueError(f"Invalid analysis: {cfg.analyses.analysis}")
+            raise ValueError(f"Invalid analysis: {cfg.experiment.analysis}")
     return df.columns
 
 

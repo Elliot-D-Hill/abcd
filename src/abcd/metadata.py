@@ -1,9 +1,8 @@
 import polars as pl
 import polars.selectors as cs
-from sklearn import set_config
 
-from abcd.config import Config, Features, get_config
-from abcd.preprocess import get_datasets
+from abcd.config import Config, Features
+from abcd.process import get_datasets
 from abcd.transform import get_dataset
 
 
@@ -163,9 +162,3 @@ def make_metadata(cfg: Config):
     splits = get_dataset(cfg=cfg)
     metadata = make_subject_metadata(splits=splits)
     metadata.write_csv(cfg.filepaths.data.raw.metadata)
-
-
-if __name__ == "__main__":
-    set_config(transform_output="polars")
-    cfg = get_config(analysis="metadata", factor_model="within_event")
-    make_metadata(cfg=cfg)

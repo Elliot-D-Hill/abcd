@@ -139,7 +139,7 @@ class Index(BaseModel):
     label: str
 
 
-class Analyses(BaseModel):
+class Experiment(BaseModel):
     analyses: list[str]
     analysis: str
     factor_models: list[str]
@@ -160,7 +160,7 @@ class Config(BaseModel):
     tables: bool
     verbose: bool
     index: Index
-    analyses: Analyses
+    experiment: Experiment
     filepaths: Filepaths
     preprocess: Preprocess
     dataloader: Dataloader
@@ -198,6 +198,6 @@ def get_config(factor_model: str, analysis: str | None = None) -> Config:
         new_path = Path("data/analyses/metadata")
     else:
         new_path = Path(f"data/analyses/{factor_model}/{analysis}")
-    cfg.analysis = analysis
-    cfg.factor_model = factor_model
+    cfg.experiment.analysis = analysis
+    cfg.experiment.factor_model = factor_model
     return update_paths(new_path=new_path, cfg=cfg)

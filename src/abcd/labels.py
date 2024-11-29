@@ -1,5 +1,6 @@
 import polars as pl
 import polars.selectors as cs
+from nanuk.preprocess import filter_null_rows
 from nanuk.transform import assign_splits
 from sklearn import set_config
 from sklearn.compose import ColumnTransformer
@@ -10,7 +11,6 @@ from sklearn.preprocessing import KBinsDiscretizer, StandardScaler
 from tomllib import load
 
 from abcd.config import Config
-from abcd.preprocess import filter_null_rows
 
 
 def label_transformer(cfg: Config):

@@ -10,13 +10,7 @@ from abcd.utils import EVENT_MAPPING, EVENTS
 
 def join_dataframes(dfs: list[pl.LazyFrame], join_on: list[str]) -> pl.LazyFrame:
     return reduce(
-        lambda left, right: left.join(
-            right,
-            how="full",
-            coalesce=True,
-            on=join_on,
-        ),
-        dfs,
+        lambda left, right: left.join(right, how="full", coalesce=True, on=join_on), dfs
     )
 
 
@@ -33,15 +27,10 @@ def make_demographics(df: pl.LazyFrame):
 
 
 def make_adi(df: pl.LazyFrame):
-    adi_columns = [
-        "reshist_addr1_adi_perc",
-        "reshist_addr2_adi_perc",
-        "reshist_addr3_adi_perc",
-    ]
-    adi = "adi_percentile"
+    adi = ["reshist_addr1_adi_perc", "reshist_addr2_adi_perc", "reshist_addr3_adi_perc"]
     return df.with_columns(
-        pl.mean_horizontal(adi_columns).forward_fill().alias(adi)
-    ).drop(adi_columns)
+        pl.mean_horizontal(adi).forward_fill().alias("adi_percentile")
+    ).drop(adi)
 
 
 def get_datasets(cfg: Config) -> list[pl.LazyFrame]:
@@ -103,7 +92,7 @@ def get_mri_data(cfg: Config):
 
 
 def generate_data(cfg: Config):
-    if cfg.analyses.analysis == "mri":
+    if cfg.experiment.analysis == "mri":
         datasets = get_mri_data(cfg=cfg)
         df = join_dataframes(dfs=datasets, join_on=cfg.index.join_on)
     else:

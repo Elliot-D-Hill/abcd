@@ -168,7 +168,7 @@ def make_shap_table(analysis: str, factor_model: str):
 def make_tables(cfg: Config):
     cross_tab = cross_tabulation()
     aggregate_metrics(
-        analyses=cfg.analyses.analyses, factor_models=cfg.analyses.factor_models
+        analyses=cfg.experiment.analyses, factor_models=cfg.experiment.factor_models
     )
     df = pl.scan_parquet("data/results/metrics/metrics.parquet")
     groups = ["Factor model", "Predictor set", "Metric", "Variable", "Group"]

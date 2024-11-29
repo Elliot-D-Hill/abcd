@@ -75,7 +75,6 @@ class Transformer(nn.Module):
         max_seq_len,
     ):
         super().__init__()
-
         self.positional_encoding = nn.Parameter(torch.randn(1, max_seq_len, input_dim))
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=input_dim,

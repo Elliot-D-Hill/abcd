@@ -1,7 +1,7 @@
 from functools import partial
 
 import optuna
-from optuna.samplers import MOTPESampler, QMCSampler, TPESampler
+from optuna.samplers import QMCSampler, TPESampler
 from tomllib import load
 
 from abcd.config import Config
@@ -41,28 +41,21 @@ def get_sampler(cfg: Config):
     half_trials = cfg.tuner.n_trials // 2
     if cfg.tuner.sampler == "tpe":
         sampler = TPESampler(
-            multivariate=True,
-            n_startup_trials=half_trials,
-            seed=cfg.random_seed,
+            multivariate=True, n_startup_trials=half_trials, seed=cfg.random_seed
         )
-        direction = "minimize"
-    elif cfg.tuner.sampler == "motpe":
-        sampler = MOTPESampler(n_startup_trials=half_trials, seed=cfg.random_seed)
-        direction = ["minimize", "maximize"]
     elif cfg.tuner.sampler == "qmc":
         sampler = QMCSampler(seed=cfg.random_seed)
-        direction = "minimize"
     else:
         raise ValueError(
-            f"Invalid sampler '{cfg.tuner.sampler}'. Choose from: 'tpe', 'motpe', 'qmc'"
+            f"Invalid sampler '{cfg.tuner.sampler}'. Choose from: 'tpe', 'qmc'"
         )
-    return sampler, direction
+    return sampler
 
 
 def tune(cfg: Config, data_module, input_dim: int, output_dim: int):
-    sampler, direction = get_sampler(cfg=cfg)
+    sampler = get_sampler(cfg=cfg)
     study = optuna.create_study(
-        sampler=sampler, directions=direction, study_name="ABCD"
+        sampler=sampler, directions="minimize", study_name="ABCD"
     )
     objective_function = partial(
         objective,

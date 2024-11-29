@@ -4,9 +4,6 @@ import matplotlib.pyplot as plt
 import polars as pl
 import polars.selectors as cs
 import seaborn as sns
-from toml import load
-
-from abcd.cfg import Config
 
 FORMAT = "pdf"
 
@@ -282,8 +279,3 @@ def plot(cfg):
     #     figsize=(24, 16),
     # )
     # p_factor_model_comparison()
-
-
-if __name__ == "__main__":
-    cfg = Config(**load("cfg.toml"))
-    plot(cfg)
