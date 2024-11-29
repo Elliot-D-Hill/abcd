@@ -1,4 +1,5 @@
 from copy import deepcopy
+from multiprocessing import cpu_count
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -53,10 +54,26 @@ class Preprocess(BaseModel):
     train_size: float
 
 
-class Training(BaseModel):
+class Dataloader(BaseModel):
     batch_size: int
+    num_workers: int | str
+    pin_memory: bool
+    persistent_workers: bool
+    multiprocessing_context: str
+
+    def __post_init__(self):
+        if self.num_workers == "auto":
+            self.num_workers = cpu_count()
+
+
+class Trainer(BaseModel):
     gradient_clip: float
     max_epochs: dict
+
+
+class Tuner(BaseModel):
+    n_trials: int
+    sampler: str
 
 
 class Logging(BaseModel):
@@ -66,9 +83,9 @@ class Logging(BaseModel):
 
 class Optimizer(BaseModel):
     lr: dict
+    momentum: dict
     weight_decay: dict
     lambda_l1: dict
-    momentum: dict
     nesterov: bool
 
 
@@ -77,6 +94,10 @@ class Model(BaseModel):
     hidden_dim: dict
     num_layers: dict
     dropout: dict
+
+
+class Evaluate(BaseModel):
+    n_bootstraps: int
 
 
 class Dataset(BaseModel):
@@ -111,35 +132,45 @@ class Features(BaseModel):
     mri_y_tfmr_nback_2b_dsk: Dataset
 
 
-class Config(BaseModel):
-    fast_dev_run: bool
-    random_seed: int
-    regenerate: bool
-    predict: bool
-    tune: bool
-    log: bool
-    evaluate: bool
-    shap: bool
-    plot: bool
-    tables: bool
-    n_trials: int
-    n_bootstraps: int
-    verbose: bool
-    n_trials: int
+class Index(BaseModel):
     join_on: list[str]
+    sample_id: str
+    event: str
+    label: str
+
+
+class Analyses(BaseModel):
     analyses: list[str]
     analysis: str
     factor_models: list[str]
     factor_model: str
+
+
+class Config(BaseModel):
+    random_seed: int
     device: str
-    sampler: str
+    fast_dev_run: bool
+    regenerate: bool
+    tune: bool
+    log: bool
+    predict: bool
+    evaluate: bool
+    importance: bool
+    plot: bool
+    tables: bool
+    verbose: bool
+    index: Index
+    analyses: Analyses
     filepaths: Filepaths
     preprocess: Preprocess
+    dataloader: Dataloader
     features: Features
-    training: Training
-    logging: Logging
+    trainer: Trainer
+    tuner: Tuner
     optimizer: Optimizer
     model: Model
+    evaluation: Evaluate
+    logging: Logging
 
 
 def update_paths(new_path: Path, cfg: Config) -> Config:

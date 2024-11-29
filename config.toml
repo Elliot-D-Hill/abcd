@@ -1,17 +1,23 @@
-fast_dev_run = false
 random_seed = 42
+device = "mps"
+fast_dev_run = true
 regenerate = true
 tune = true
 log = false
 predict = false
 evaluate = false
-shap = false
+importance = false
 plot = false
 tables = false
 verbose = false
-n_trials = 128
-n_bootstraps = 1000
+
+[index]
 join_on = ["src_subject_id", "eventname"]
+sample_id = "src_subject_id"
+event = "src_subject_id"
+label = "y_{t+1}"
+
+[analyses]
 factor_models = ["within_event"] # , "across_event", "ksads"]
 factor_model = "within_event"
 analyses = [
@@ -24,47 +30,29 @@ analyses = [
     # "autoregressive",
 ]
 analysis = "mri"
-device = "mps"
-sampler = "tpe"
-
-[filepaths]
-tables = "data/tables/"
-plots = "data/plots/"
-[filepaths.data]
-[filepaths.data.raw]
-labels = "data/raw/features/mh_p_cbcl.csv"
-dataset = "data/raw/dataset.csv"
-metadata = "data/raw/metadata.csv"
-features = "data/raw/features/"
-mri = "data/raw/mri"
-splits = "data/raw/splits/"
-[filepaths.data.processed]
-labels = "data/processed/labels.csv"
-features = "data/processed/features.csv"
-dataset = "data/processed/dataset.csv"
-[filepaths.data.analytic]
-train = "analytic/train.csv"
-val = "analytic/val.csv"
-test = "analytic/test.csv"
-[filepaths.data.results]
-metrics = "results/metrics/"
-checkpoints = "results/checkpoints/"
-study = "results/study.pkl"
-logs = "results/lightning_logs"
-predictions = "results/predictions.parquet"
 
 [preprocess]
 n_neighbors = 5
 n_quantiles = 4
 train_size = 0.8
 
-[training]
+[dataloader]
 batch_size = 1028
+num_workers = "auto"
+pin_memory = true
+persistent_workers = true
+multiprocessing_context = "fork"
+
+[trainer]
 gradient_clip = 1.0
 [training.max_epochs]
 name = "max_epochs"
 low = 5
 high = 100
+
+[tuner]
+n_trials = 128
+sampler = "tpe"
 
 [optimizer]
 nesterov = true
@@ -108,6 +96,35 @@ high = 3
 [logging]
 checkpoint_every_n_steps = 1
 log_every_n_steps = 1
+
+[evaluation]
+n_bootstraps = 1000
+
+[filepaths]
+tables = "data/tables/"
+plots = "data/plots/"
+[filepaths.data]
+[filepaths.data.raw]
+labels = "data/raw/features/mh_p_cbcl.csv"
+dataset = "data/raw/dataset.csv"
+metadata = "data/raw/metadata.csv"
+features = "data/raw/features/"
+mri = "data/raw/mri"
+splits = "data/raw/splits/"
+[filepaths.data.processed]
+labels = "data/processed/labels.csv"
+features = "data/processed/features.csv"
+dataset = "data/processed/dataset.csv"
+[filepaths.data.analytic]
+train = "analytic/train.csv"
+val = "analytic/val.csv"
+test = "analytic/test.csv"
+[filepaths.data.results]
+metrics = "results/metrics/"
+checkpoints = "results/checkpoints/"
+study = "results/study.pkl"
+logs = "results/lightning_logs"
+predictions = "results/predictions.parquet"
 
 [features]
 [features.mh_p_cbcl]

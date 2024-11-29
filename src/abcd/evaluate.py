@@ -12,13 +12,13 @@ from torchmetrics.classification import (
 from torchmetrics.functional import precision_recall_curve, roc
 from torchmetrics.wrappers import BootStrapper
 
-from abcd.cfg import Config
+from abcd.config import Config
 from abcd.dataset import ABCDDataModule
 from abcd.model import Network, make_trainer
 
 
 def make_predictions(cfg: Config, model: Network, data_module: ABCDDataModule):
-    trainer = make_trainer(cfg, checkpoint=False)
+    trainer = make_trainer(cfg=cfg, checkpoint=False)
     predictions = trainer.predict(model, dataloaders=data_module.test_dataloader())
     outputs, labels = zip(*predictions)
     outputs = torch.concat(outputs).cpu()
@@ -194,7 +194,7 @@ def evaluate_model(data_module: ABCDDataModule, cfg: Config, model: Network):
     grouped_df = df.group_by("Variable", "Group", maintain_order=True)
     prevalence = make_prevalence(df)
     metrics = grouped_df.map_groups(
-        partial(make_metrics, n_bootstraps=cfg.n_bootstraps)
+        partial(make_metrics, n_bootstraps=cfg.evaluation.n_bootstraps)
     )
     metrics = metrics.join(prevalence, on=["Variable", "Group", "Quartile at t+1"])
     metrics.write_csv(cfg.filepaths.data.results.metrics / "metrics.csv")

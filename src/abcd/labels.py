@@ -1,5 +1,6 @@
 import polars as pl
 import polars.selectors as cs
+from nanuk.transform import assign_splits
 from sklearn import set_config
 from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import FactorAnalysis
@@ -34,7 +35,7 @@ def label_transformer(cfg: Config):
 
 def apply_transformer(df: pl.DataFrame, cfg: Config) -> pl.DataFrame:
     dfs = []
-    for _, event in df.group_by("eventname"):
+    for _, event in df.group_by(cfg.index.event):
         train = event.filter(pl.col("split") == "train")
         transformer = label_transformer(cfg=cfg)
         transformer.fit(train)  # type: ignore
@@ -55,20 +56,14 @@ def shift_y(df: pl.DataFrame, join_on: list[str]) -> pl.DataFrame:
     )
 
 
-def make_labels(cfg: Config):
-    columns = cfg.join_on + cfg.features.mh_p_cbcl.columns
-    df = (
-        pl.scan_csv(cfg.filepaths.data.raw.labels)
-        .select(columns)
-        .with_columns(pl.col("eventname").cast(EVENTS))
-    )
-    df = filter_null_rows(df=df, columns=cs.by_name(cfg.features.mh_p_cbcl.columns))
-    df = apply_transformer(df=df.collect(), cfg=cfg)
-    df = shift_y(df=df, join_on=cfg.join_on)
-    return df
+def make_splits(cfg: Config):
+    train_frac = cfg.preprocess.train_size
+    val_test_frac = (1 - train_frac) / 2
+    splits = {"train": train_frac, "val": val_test_frac, "test": val_test_frac}
+    return assign_splits(splits=splits, group=cfg.index.sample_id, name="split")
 
 
-EVENTS = pl.Enum(
+Events = pl.Enum(
     [
         "baseline_year_1_arm_1",
         "1_year_follow_up_y_arm_1",
@@ -78,10 +73,26 @@ EVENTS = pl.Enum(
     ]
 )
 
-if __name__ == "__main__":
+
+def make_labels(cfg: Config | None = None) -> pl.DataFrame:
     set_config(transform_output="polars")
-    with open("cfg.toml", "rb") as f:
-        cfg = Config(**load(f))
-    df = make_labels(cfg=cfg)
+    if cfg is None:
+        with open("cfg.toml", "rb") as f:
+            cfg = Config(**load(f))
+    columns = cfg.index.join_on + cfg.features.mh_p_cbcl.columns
+    df = (
+        pl.scan_csv(cfg.filepaths.data.raw.labels)
+        .select(columns)
+        .with_columns(pl.col(cfg.index.event).cast(Events))
+    )
+    split_assignment = make_splits(cfg=cfg)
+    df = df.with_columns(split_assignment)
+    df = filter_null_rows(df=df, columns=cs.by_name(cfg.features.mh_p_cbcl.columns))
+    df = apply_transformer(df=df.collect(), cfg=cfg)
+    df = shift_y(df=df, join_on=cfg.index.join_on)
     df.write_parquet("data/processed/labels.parquet")
-    print(df)
+    return df
+
+
+if __name__ == "__main__":
+    make_labels()

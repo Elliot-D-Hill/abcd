@@ -3,49 +3,8 @@ from itertools import product
 import polars as pl
 import polars.selectors as cs
 
-from abcd.cfg import Config, get_cfg
-
-GROUP_ORDER = pl.Enum(
-    [
-        "Conversion",
-        "Persistence",
-        "Agnostic",
-        "1",
-        "2",
-        "3",
-        "4",
-        "9",
-        "10",
-        "11",
-        "12",
-        "13",
-        "14",
-        "2016",
-        "2017",
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "Baseline",
-        "1-year",
-        "2-year",
-        "3-year",
-        "Asian",
-        "Black",
-        "Hispanic",
-        "White",
-        "Other",
-        "Female",
-        "Male",
-    ]
-)
-
-RISK_GROUPS = {
-    "1": "No risk",
-    "2": "Low risk",
-    "3": "Moderate risk",
-    "4": "High risk",
-}
+from abcd.config import Config, get_config
+from abcd.utils import GROUP_ORDER, RISK_GROUPS
 
 
 def cross_tabulation():
@@ -208,7 +167,9 @@ def make_shap_table(analysis: str, factor_model: str):
 
 def make_tables(cfg: Config):
     cross_tab = cross_tabulation()
-    aggregate_metrics(analyses=cfg.analyses, factor_models=cfg.factor_models)
+    aggregate_metrics(
+        analyses=cfg.analyses.analyses, factor_models=cfg.analyses.factor_models
+    )
     df = pl.scan_parquet("data/results/metrics/metrics.parquet")
     groups = ["Factor model", "Predictor set", "Metric", "Variable", "Group"]
     make_metric_table(df=df, groups=groups)
@@ -230,5 +191,5 @@ def make_tables(cfg: Config):
 
 
 if __name__ == "__main__":
-    cfg = get_cfg()
+    cfg = get_config(factor_model="within_event")
     make_tables(cfg)

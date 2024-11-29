@@ -14,8 +14,20 @@ from torch.optim.sgd import SGD
 from torchmetrics.functional.classification import multiclass_auroc
 from torchvision.ops import MLP
 
-from abcd.cfg import Config
+from abcd.config import Config, Model
 from abcd.utils import get_best_checkpoint
+
+
+class MLPModel(nn.Module):
+    def __init__(self, input_dim, output_dim, hidden_dim, num_layers, dropout):
+        super().__init__()
+        hidden_channels = ([hidden_dim] * num_layers) + [output_dim]
+        self.mlp = MLP(
+            in_channels=input_dim, hidden_channels=hidden_channels, dropout=dropout
+        )
+
+    def forward(self, x):
+        return self.mlp(x)
 
 
 class SequenceModel(nn.Module):
@@ -108,19 +120,20 @@ def drop_nan(outputs, labels):
 
 
 class Network(LightningModule):
-    def __init__(
-        self,
-        model_hyperparameters: dict,
-        optimizer_hyperparameters: dict,
-        lambda_l1: float,
-    ):
+    def __init__(self, input_dim: int, output_dim: int, cfg: Config):
         super().__init__()
         self.save_hyperparameters(logger=False)
-        self.model = make_architecture(**model_hyperparameters)
+        self.model = make_architecture(
+            cfg=cfg.model,
+            input_dim=input_dim,
+            output_dim=output_dim,
+        )
         self.criterion = nn.CrossEntropyLoss()
-        self.optimizer = SGD(self.model.parameters(), **optimizer_hyperparameters)
+        self.optimizer = SGD(
+            self.model.parameters(), **cfg.optimizer.model_dump(exclude={"lambda_l1"})
+        )
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
-        self.lambda_l1 = lambda_l1
+        self.lambda_l1 = cfg.optimizer.lambda_l1
 
     def forward(self, inputs):
         return self.model(inputs)
@@ -159,7 +172,7 @@ class Network(LightningModule):
         return {"optimizer": self.optimizer, "lr_scheduler": scheduler_cfg}
 
 
-def make_trainer(max_epochs: int, cfg: Config, checkpoint: bool) -> Trainer:
+def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
     callbacks: list = [RichProgressBar()]
     if checkpoint:
         checkpoint_callback = ModelCheckpoint(
@@ -169,43 +182,28 @@ def make_trainer(max_epochs: int, cfg: Config, checkpoint: bool) -> Trainer:
             verbose=cfg.verbose,
         )
         callbacks.append(checkpoint_callback)
-    logger = (
-        TensorBoardLogger(save_dir=cfg.filepaths.data.results.logs)
-        if cfg.log
-        else False
-    )
+    logger = TensorBoardLogger(save_dir=cfg.filepaths.data.results.logs)
+    logger = logger if cfg.log else False
     trainer = Trainer(
         logger=logger,
         callbacks=callbacks,
         enable_checkpointing=checkpoint,
-        gradient_clip_val=cfg.training.gradient_clip,
-        max_epochs=max_epochs,
         accelerator="auto",
         devices="auto",
         log_every_n_steps=cfg.logging.log_every_n_steps,
         fast_dev_run=cfg.fast_dev_run,
         check_val_every_n_epoch=1,
+        **cfg.trainer.model_dump(),
     )
     return trainer
 
 
-def make_architecture(
-    method: str,
-    input_dim: int,
-    hidden_dim: int,
-    output_dim: int,
-    num_layers: int,
-    dropout: float,
-):
+def make_architecture(cfg: Model, input_dim: int, output_dim: int):
+    hparams = cfg.model_dump(exclude={"method"})
     sequence_model = partial(
-        SequenceModel,
-        input_dim=input_dim,
-        output_dim=output_dim,
-        hidden_dim=hidden_dim,
-        num_layers=num_layers,
-        dropout=dropout,
+        SequenceModel, input_dim=input_dim, output_dim=output_dim, **hparams
     )
-    match method:
+    match cfg.method:
         case "rnn":
             return sequence_model(method=nn.RNN)
         case "lstm":
@@ -214,56 +212,22 @@ def make_architecture(
             return Transformer(
                 input_dim=input_dim,
                 output_dim=output_dim,
-                hidden_dim=hidden_dim,
-                num_layers=num_layers,
                 num_heads=4,
-                dropout=dropout,
                 max_seq_len=4,
+                **hparams,
             )
         case "mlp":
-            hidden_channels = [hidden_dim] * num_layers
-            return MLP(
-                in_channels=input_dim,
-                hidden_channels=hidden_channels + [output_dim],
-                dropout=dropout,
-            )
+            return MLPModel(imput_dim=input_dim, output_dim=output_dim, **hparams)
         case _:
-            raise ValueError(f"Invalid method '{method}'. Choose from: 'rnn' or 'mlp'")
+            raise ValueError(
+                f"Invalid method '{cfg.method}'. Choose from: 'rnn' or 'mlp'"
+            )
 
 
 def make_model(
-    input_dim: int,
-    output_dim: int,
-    nesterov: bool,
-    momentum: float = 0.9,
-    method: str = "rnn",
-    hidden_dim: int = 256,
-    num_layers: int = 2,
-    dropout: float = 0.0,
-    lr: float = 0.01,
-    weight_decay: float = 0.0,
-    lambda_l1: float = 0.0,
-    checkpoints: Path | None = None,
+    cfg: Config, input_dim: int, output_dim: int, checkpoints: Path | None = None
 ):
     if checkpoints:
         best_model_path = get_best_checkpoint(ckpt_folder=checkpoints, mode="min")
         return Network.load_from_checkpoint(checkpoint_path=best_model_path)
-    model_hyperparameters = {
-        "method": method,
-        "input_dim": input_dim,
-        "output_dim": output_dim,
-        "hidden_dim": hidden_dim,
-        "num_layers": num_layers,
-        "dropout": dropout,
-    }
-    optimizer_hyperparameters = {
-        "lr": lr,
-        "weight_decay": weight_decay,
-        "momentum": momentum,
-        "nesterov": nesterov,
-    }
-    return Network(
-        model_hyperparameters=model_hyperparameters,
-        optimizer_hyperparameters=optimizer_hyperparameters,
-        lambda_l1=lambda_l1,
-    )
+    return Network(input_dim=input_dim, output_dim=output_dim, cfg=cfg)
