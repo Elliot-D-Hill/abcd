@@ -25,11 +25,14 @@ class Processed(BaseModel):
     labels: Path
     features: Path
     dataset: Path
+    metadata: Path
+    subject_metadata: Path
 
 
 class Results(BaseModel):
     metrics: Path
     checkpoints: Path
+    best_model: Path
     study: Path
     logs: Path
     predictions: Path
@@ -50,8 +53,9 @@ class Filepaths(BaseModel):
 
 class Preprocess(BaseModel):
     n_neighbors: int
-    n_quantiles: int
-    train_size: float
+    null_cutoff: float
+    columns_to_drop: list[str]
+    splits: dict[str, float]
 
 
 class Dataloader(BaseModel):
@@ -67,8 +71,8 @@ class Dataloader(BaseModel):
 
 
 class Trainer(BaseModel):
-    gradient_clip: float
-    max_epochs: dict
+    gradient_clip_val: float
+    max_epochs: int
 
 
 class Tuner(BaseModel):
@@ -82,18 +86,44 @@ class Logging(BaseModel):
 
 
 class Optimizer(BaseModel):
-    lr: dict
-    momentum: dict
-    weight_decay: dict
-    lambda_l1: dict
+    lr: float
+    momentum: float
+    weight_decay: float
+    lambda_l1: float
     nesterov: bool
 
 
 class Model(BaseModel):
-    method: dict
+    method: str
+    hidden_dim: int
+    num_layers: int
+    dropout: float
+    input_dim: int
+    output_dim: int
+
+
+class ModelHParams(BaseModel):
     hidden_dim: dict
     num_layers: dict
     dropout: dict
+    method: dict
+
+
+class OptimizerHParams(BaseModel):
+    lr: dict
+    momentum: dict
+    weight_decay: dict
+    lambda_l1: dict
+
+
+class TrainerHParams(BaseModel):
+    max_epochs: dict
+
+
+class Hyperparameters(BaseModel):
+    model: ModelHParams
+    optimizer: OptimizerHParams
+    trainer: TrainerHParams
 
 
 class Evaluate(BaseModel):
@@ -137,6 +167,7 @@ class Index(BaseModel):
     sample_id: str
     event: str
     label: str
+    split: str
 
 
 class Experiment(BaseModel):
@@ -144,6 +175,7 @@ class Experiment(BaseModel):
     analysis: str
     factor_models: list[str]
     factor_model: str
+    split_on: str
 
 
 class Config(BaseModel):
@@ -167,6 +199,7 @@ class Config(BaseModel):
     features: Features
     trainer: Trainer
     tuner: Tuner
+    hyperparameters: Hyperparameters
     optimizer: Optimizer
     model: Model
     evaluation: Evaluate
@@ -190,7 +223,7 @@ def update_paths(new_path: Path, cfg: Config) -> Config:
 
 
 def get_config(factor_model: str, analysis: str | None = None) -> Config:
-    with open("cfg.toml", "rb") as f:
+    with open("config.toml", "rb") as f:
         cfg = Config(**load(f))
     if analysis is None:
         return cfg

@@ -1,7 +1,7 @@
 random_seed = 42
 device = "mps"
-fast_dev_run = true
-regenerate = true
+fast_dev_run = false
+regenerate = false
 tune = true
 log = false
 predict = false
@@ -14,10 +14,11 @@ verbose = false
 [index]
 join_on = ["src_subject_id", "eventname"]
 sample_id = "src_subject_id"
-event = "src_subject_id"
+event = "eventname"
 label = "y_{t+1}"
+split = "split"
 
-[analyses]
+[experiment]
 factor_models = ["within_event"] # , "across_event", "ksads"]
 factor_model = "within_event"
 analyses = [
@@ -30,11 +31,29 @@ analyses = [
     # "autoregressive",
 ]
 analysis = "mri"
+split_on = "src_subject_id" # sample_id, site_id
 
 [preprocess]
 n_neighbors = 5
-n_quantiles = 4
-train_size = 0.8
+null_cutoff = 0.25
+columns_to_drop = [
+    "_nm",
+    "_nt",
+    "_na",
+    "_language",
+    "_answered",
+    "ss_sbd",
+    "ss_da",
+    "_total",
+    "_mean",
+    "sds_",
+    "srpf_",
+    "_fc",
+]
+[preprocess.splits]
+train = 0.8
+val = 0.1
+test = 0.1
 
 [dataloader]
 batch_size = 1028
@@ -43,52 +62,65 @@ pin_memory = true
 persistent_workers = true
 multiprocessing_context = "fork"
 
-[trainer]
-gradient_clip = 1.0
-[training.max_epochs]
-name = "max_epochs"
-low = 5
-high = 100
-
 [tuner]
 n_trials = 128
 sampler = "tpe"
 
+[trainer]
+gradient_clip_val = 1.0
+max_epochs = 100
+
 [optimizer]
 nesterov = true
-[optimizer.momentum]
-name = "momentum"
-low = 0.9
-high = 0.99
-[optimizer.lr]
+momentum = 0.9
+lr = 1e-3
+weight_decay = 1e-4
+lambda_l1 = 1e-4
+
+[model]
+method = "lstm"
+hidden_dim = 128
+dropout = 0.5
+num_layers = 2
+input_dim = 0    # determined by data at runtime
+output_dim = 4
+
+[hyperparameters]
+[hyperparameters.trainer.max_epochs]
+name = "max_epochs"
+low = 5
+high = 100
+[hyperparameters.optimizer.lr]
 name = "lr"
 low = 1e-5
 high = 1e-2
 log = true
-[optimizer.weight_decay]
+[hyperparameters.optimizer.weight_decay]
 name = "weight_decay"
 low = 1e-8
 high = 1e-2
 log = true
-[optimizer.lambda_l1]
+[hyperparameters.optimizer.lambda_l1]
 name = "lambda_l1"
 low = 1e-8
 high = 1e-2
 log = true
-
-[model]
-[model.method]
+[hyperparameters.optimizer.momentum]
+name = "momentum"
+low = 0.9
+high = 0.99
+[hyperparameters.model.method]
 name = "method"
-choices = ["mlp", "rnn", "lstm", "transformer"]
-[model.hidden_dim]
+choices = ["mlp", "swem", "rnn", "lstm", "transformer"]
+[hyperparameters.model.hidden_dim]
 name = "hidden_dim"
 low = 32
 high = 256
-[model.dropout]
+[hyperparameters.model.dropout]
 name = "dropout"
 low = 0.0
 high = 0.75
-[model.num_layers]
+[hyperparameters.model.num_layers]
 name = "num_layers"
 low = 1
 high = 3
@@ -106,22 +138,25 @@ plots = "data/plots/"
 [filepaths.data]
 [filepaths.data.raw]
 labels = "data/raw/features/mh_p_cbcl.csv"
-dataset = "data/raw/dataset.csv"
-metadata = "data/raw/metadata.csv"
+dataset = "data/raw/dataset.parquet"
+metadata = "data/raw/metadata.parquet"
 features = "data/raw/features/"
-mri = "data/raw/mri"
+mri = "data/raw/imaging"
 splits = "data/raw/splits/"
 [filepaths.data.processed]
-labels = "data/processed/labels.csv"
-features = "data/processed/features.csv"
-dataset = "data/processed/dataset.csv"
+labels = "data/processed/labels.parquet"
+features = "data/processed/features.parquet"
+dataset = "data/processed/dataset.parquet"
+metadata = "data/processed/metadata.parquet"
+subject_metadata = "data/processed/subject_metadata.parquet"
 [filepaths.data.analytic]
-train = "analytic/train.csv"
-val = "analytic/val.csv"
-test = "analytic/test.csv"
+train = "analytic/train.parquet"
+val = "analytic/val.parquet"
+test = "analytic/test.parquet"
 [filepaths.data.results]
 metrics = "results/metrics/"
 checkpoints = "results/checkpoints/"
+best_model = "results/checkpoints/best.ckpt"
 study = "results/study.pkl"
 logs = "results/lightning_logs"
 predictions = "results/predictions.parquet"

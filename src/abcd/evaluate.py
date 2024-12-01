@@ -15,6 +15,7 @@ from torchmetrics.wrappers import BootStrapper
 from abcd.config import Config
 from abcd.dataset import ABCDDataModule
 from abcd.model import Network, make_trainer
+from abcd.tune import get_model
 
 
 def make_predictions(cfg: Config, model: Network, data_module: ABCDDataModule):
@@ -158,7 +159,8 @@ def make_prevalence(df: pl.DataFrame):
     ).select(["Variable", "Group", "Quartile at t+1", "Prevalence"])
 
 
-def evaluate_model(data_module: ABCDDataModule, cfg: Config, model: Network):
+def evaluate_model(cfg: Config, data_module: ABCDDataModule):
+    model = get_model(cfg=cfg)
     model.to(cfg.device)
     cfg.filepaths.data.results.metrics.mkdir(parents=True, exist_ok=True)
     if cfg.predict or not cfg.filepaths.data.results.predictions.is_file():

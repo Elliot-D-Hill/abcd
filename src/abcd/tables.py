@@ -4,7 +4,7 @@ import polars as pl
 import polars.selectors as cs
 
 from abcd.config import Config, get_config
-from abcd.utils import GROUP_ORDER, RISK_GROUPS
+from abcd.constants import GROUP_ORDER, RISK_GROUPS
 
 
 def cross_tabulation():

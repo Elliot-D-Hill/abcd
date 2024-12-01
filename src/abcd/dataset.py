@@ -1,4 +1,5 @@
 from functools import partial
+from pathlib import Path
 
 import polars as pl
 from lightning import LightningDataModule
@@ -8,18 +9,24 @@ from torch.utils.data import DataLoader, Dataset
 from abcd.config import Config
 
 
+def make_parquet_dataset(path: Path, sample_id: str, dataset: pl.DataFrame):
+    dataset.write_parquet(path, partition_by=sample_id)
+
+
 def make_tensor_dataset(cfg: Config, dataset: pl.DataFrame):
     data = []
     for df in dataset.partition_by(
         cfg.index.sample_id, maintain_order=True, include_key=False
     ):
         labels = df.select(cfg.index.label).to_torch(dtype=pl.Float32)
-        features = df.select(pl.exclude(cfg.index.label)).to_torch(dtype=pl.Float32)
+        exclude = pl.exclude(cfg.index.split, cfg.index.label)
+        subject = df.select(exclude)
+        features = subject.to_torch(dtype=pl.Float32)
         data.append((features, labels))
     return data
 
 
-class RNNDataset(Dataset):
+class TimeSeriesDataset(Dataset):
     def __init__(self, cfg: Config, dataset: pl.DataFrame) -> None:
         self.dataset = make_tensor_dataset(cfg=cfg, dataset=dataset)
 
@@ -41,9 +48,9 @@ def collate_fn(batch):
 class ABCDDataModule(LightningDataModule):
     def __init__(self, splits: dict[str, pl.DataFrame], cfg: Config) -> None:
         super().__init__()
-        self.train_dataset = RNNDataset(cfg=cfg, dataset=splits["train"])
-        self.val_dataset = RNNDataset(cfg=cfg, dataset=splits["val"])
-        self.test_dataset = RNNDataset(cfg=cfg, dataset=splits["test"])
+        self.train_dataset = TimeSeriesDataset(cfg=cfg, dataset=splits["train"])
+        self.val_dataset = TimeSeriesDataset(cfg=cfg, dataset=splits["val"])
+        self.test_dataset = TimeSeriesDataset(cfg=cfg, dataset=splits["test"])
         self.feature_names = (
             splits["train"].drop([cfg.index.sample_id, cfg.index.label]).columns
         )

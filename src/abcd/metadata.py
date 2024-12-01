@@ -1,9 +1,56 @@
 import polars as pl
 import polars.selectors as cs
+from nanuk.preprocess import join_dataframes
 
-from abcd.config import Config, Features
+from abcd.config import Config
+from abcd.constants import COLUMNS, EVENTS_TO_NAMES, RACE_MAPPING, SEX_MAPPING
+from abcd.labels import make_labels
 from abcd.process import get_datasets
-from abcd.transform import get_dataset
+
+
+def make_subject_metadata(df: pl.LazyFrame) -> pl.LazyFrame:
+    sex = pl.col("demo_sex_v2").replace_strict(SEX_MAPPING, default=None)
+    race = pl.col("race_ethnicity").replace_strict(RACE_MAPPING, default=None)
+    age = pl.col("interview_age").truediv(12).round(0)
+    quartiles = ["1", "2", "3", "4"]
+    adi = pl.col("adi_percentile").qcut(quantiles=4, labels=quartiles)
+    year = (
+        pl.col("interview_date")
+        .cast(pl.String)
+        .str.to_date(format="%m/%d/%Y")
+        .dt.year()
+    )
+    df = (
+        df.with_columns(sex, race, age, adi, year)
+        .with_columns(cs.numeric().cast(pl.Int32))
+        .with_columns(
+            pl.col(
+                "demo_sex_v2",
+                "race_ethnicity",
+                "adi_percentile",
+                "parent_highest_education",
+                "demo_comb_income_v2",
+            )
+            .fill_null(strategy="forward")
+            .over("src_subject_id")
+        )
+        .with_columns(cs.string().cast(pl.Categorical), cs.numeric().shrink_dtype())
+    )
+    return df
+
+
+def make_metadata(cfg: Config) -> None:
+    dfs = get_datasets(cfg=cfg)
+    make_variable_metadata(cfg=cfg, dfs=dfs)
+    df = join_dataframes(dfs=dfs, on=cfg.index.join_on, how="left")
+    df = make_subject_metadata(df=df)
+    labels = make_labels(cfg=cfg)
+    df = labels.join(df, on=cfg.index.join_on, how="left").select(COLUMNS.keys())
+    df.collect().write_parquet(cfg.filepaths.data.processed.metadata)
+    df = df.with_columns(
+        pl.col(cfg.index.event).replace_strict(EVENTS_TO_NAMES, default=None)
+    ).rename(COLUMNS)
+    df.collect().write_parquet(cfg.filepaths.data.processed.subject_metadata)
 
 
 def rename_questions() -> pl.Expr:
@@ -44,21 +91,6 @@ def rename_datasets() -> pl.Expr:
     )
 
 
-def make_variable_df(dfs: list[pl.LazyFrame], features: Features) -> pl.DataFrame:
-    metadata_dfs: list[pl.DataFrame] = []
-    for df, (filename, metadata) in zip(dfs, features.model_dump().items()):
-        df = df.collect()
-        table_metadata = {"table": [], "dataset": [], "respondent": [], "variable": []}
-        for column in df.columns:
-            table_metadata["table"].append(filename)
-            table_metadata["dataset"].append(metadata["name"])
-            table_metadata["respondent"].append(metadata["respondent"])
-            table_metadata["variable"].append(column)
-            metadata_df = pl.DataFrame(table_metadata)
-        metadata_dfs.append(metadata_df)
-    return pl.concat(metadata_dfs)
-
-
 def captialize(column: str) -> pl.Expr:
     return pl.col(column).str.slice(0, 1).str.to_uppercase() + pl.col(column).str.slice(
         1
@@ -75,8 +107,23 @@ def format_questions() -> pl.Expr:
     )
 
 
-def make_variable_metadata(dfs: list[pl.LazyFrame], features: Features):
-    variables = make_variable_df(dfs=dfs, features=features)
+def make_variable_df(cfg: Config, columns: list[list[str]]) -> pl.DataFrame:
+    dfs: list[pl.DataFrame] = []
+    for cols, (filename, metadata) in zip(columns, cfg.features.model_dump().items()):
+        table_metadata = {"table": [], "dataset": [], "respondent": [], "variable": []}
+        for column in cols:
+            table_metadata["table"].append(filename)
+            table_metadata["dataset"].append(metadata["name"])
+            table_metadata["respondent"].append(metadata["respondent"])
+            table_metadata["variable"].append(column)
+            metadata_df = pl.DataFrame(table_metadata)
+        dfs.append(metadata_df)
+    return pl.concat(dfs)
+
+
+def make_variable_metadata(cfg: Config, dfs: list[pl.LazyFrame]) -> None:
+    columns = [df.collect_schema().names() for df in dfs]
+    variables = make_variable_df(cfg=cfg, columns=columns)
     df = pl.read_csv(
         "data/raw/abcd_data_dictionary.csv",
         columns=["table_name", "var_name", "var_label", "notes"],
@@ -106,59 +153,4 @@ def make_variable_metadata(dfs: list[pl.LazyFrame], features: Features):
         .unique(subset=["variable"])
         .sort("dataset", "respondent", "variable")
     )
-    df.write_csv("data/raw/variable_metadata.csv")
-
-
-RACE_MAPPING = {1: "White", 2: "Black", 3: "Hispanic", 4: "Asian", 5: "Other"}
-SEX_MAPPING = {0: "Female", 1: "Male"}
-FOLLOW_UP_MAPPING = {0: "Baseline", 1: "1-year", 2: "2-year", 3: "3-year"}
-
-
-def make_subject_metadata(splits: dict[str, pl.DataFrame]) -> pl.DataFrame:
-    df = pl.concat(
-        [
-            split.with_columns(pl.lit(name).alias("Split"))
-            for name, split in splits.items()
-        ]
-    )
-    rename_mapping = {
-        "src_subject_id": "Subject ID",
-        "eventname": "Follow-up event",
-        "y_t": "Quartile at t",
-        "y_{t+1}": "Quartile at t+1",
-        "demo_sex_v2_1": "Sex",
-        "race_ethnicity": "Race",
-        "interview_age": "Age",
-        "interview_date": "Event year",
-        "adi_percentile": "ADI quartile",
-        # "parent_highest_education": "Parent highest education",
-        # "demo_comb_income_v2": "Combined income",
-    }
-    quartiles = ["1", "2", "3", "4"]
-    df = (
-        df.select("Split", *rename_mapping.keys())
-        .rename(rename_mapping)
-        .with_columns(
-            pl.col("Sex").replace_strict(SEX_MAPPING),
-            pl.col("Race").replace_strict(RACE_MAPPING),
-            pl.col("Follow-up event")
-            .replace_strict(FOLLOW_UP_MAPPING)
-            .cast(pl.Enum(["Baseline", "1-year", "2-year", "3-year"])),
-            pl.col("Age").truediv(12).round(0).cast(pl.Int32),
-            pl.col("ADI quartile")
-            .qcut(quantiles=4, labels=quartiles)
-            .cast(pl.Enum(quartiles)),
-            pl.col("Event year").str.to_date(format="%m/%d/%Y").dt.year(),
-            pl.col("Quartile at t", "Quartile at t+1").cast(pl.Int32).add(1),
-        )
-        .with_columns(cs.numeric().cast(pl.Int32))
-    )
-    return df
-
-
-def make_metadata(cfg: Config):
-    datasets = get_datasets(cfg=cfg)
-    make_variable_metadata(dfs=datasets, features=cfg.features)
-    splits = get_dataset(cfg=cfg)
-    metadata = make_subject_metadata(splits=splits)
-    metadata.write_csv(cfg.filepaths.data.raw.metadata)
+    df.write_parquet("data/raw/variable_metadata.parquet")

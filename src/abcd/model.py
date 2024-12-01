@@ -1,5 +1,4 @@
 from functools import partial
-from pathlib import Path
 
 import torch
 from lightning import LightningModule, Trainer
@@ -15,15 +14,25 @@ from torchmetrics.functional.classification import multiclass_auroc
 from torchvision.ops import MLP
 
 from abcd.config import Config, Model
-from abcd.utils import get_best_checkpoint
 
 
-class MLPModel(nn.Module):
-    def __init__(self, input_dim, output_dim, hidden_dim, num_layers, dropout):
+class MultiLayerPerceptron(nn.Module):
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        hidden_dim: int,
+        num_layers: int,
+        dropout: float,
+    ):
         super().__init__()
         hidden_channels = ([hidden_dim] * num_layers) + [output_dim]
         self.mlp = MLP(
-            in_channels=input_dim, hidden_channels=hidden_channels, dropout=dropout
+            in_channels=input_dim,
+            hidden_channels=hidden_channels,
+            activation_layer=nn.SiLU,
+            norm_layer=nn.LayerNorm,
+            dropout=dropout,
         )
 
     def forward(self, x):
@@ -34,11 +43,11 @@ class SequenceModel(nn.Module):
     def __init__(
         self,
         method: type[nn.Module],
-        input_dim,
-        output_dim,
-        hidden_dim,
-        num_layers,
-        dropout,
+        input_dim: int,
+        output_dim: int,
+        hidden_dim: int,
+        num_layers: int,
+        dropout: float,
     ):
         super().__init__()
         self.rnn = method(
@@ -119,14 +128,10 @@ def drop_nan(outputs, labels):
 
 
 class Network(LightningModule):
-    def __init__(self, input_dim: int, output_dim: int, cfg: Config):
+    def __init__(self, cfg: Config):
         super().__init__()
         self.save_hyperparameters(logger=False)
-        self.model = make_architecture(
-            cfg=cfg.model,
-            input_dim=input_dim,
-            output_dim=output_dim,
-        )
+        self.model = make_architecture(cfg=cfg.model)
         self.criterion = nn.CrossEntropyLoss()
         self.optimizer = SGD(
             self.model.parameters(), **cfg.optimizer.model_dump(exclude={"lambda_l1"})
@@ -162,7 +167,7 @@ class Network(LightningModule):
         outputs, labels = drop_nan(outputs, labels)
         return outputs, labels
 
-    def cfgure_optimizers(self):
+    def configure_optimizers(self):
         scheduler_cfg = {
             "scheduler": self.scheduler,
             "interval": "step",
@@ -176,9 +181,10 @@ def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
     if checkpoint:
         checkpoint_callback = ModelCheckpoint(
             dirpath=cfg.filepaths.data.results.checkpoints,
-            filename="{epoch}_{step}_{val_loss:.3f}",
+            filename="{epoch}_{step}_{val_loss:.4f}",
             save_last=True,
             verbose=cfg.verbose,
+            save_top_k=0,
         )
         callbacks.append(checkpoint_callback)
     logger = TensorBoardLogger(save_dir=cfg.filepaths.data.results.logs)
@@ -197,10 +203,10 @@ def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
     return trainer
 
 
-def make_architecture(cfg: Model, input_dim: int, output_dim: int):
+def make_architecture(cfg: Model):
     hparams = cfg.model_dump(exclude={"method"})
     sequence_model = partial(
-        SequenceModel, input_dim=input_dim, output_dim=output_dim, **hparams
+        SequenceModel, input_dim=cfg.input_dim, output_dim=cfg.output_dim, **hparams
     )
     match cfg.method:
         case "rnn":
@@ -209,24 +215,17 @@ def make_architecture(cfg: Model, input_dim: int, output_dim: int):
             return sequence_model(method=nn.LSTM)
         case "transformer":
             return Transformer(
-                input_dim=input_dim,
-                output_dim=output_dim,
+                input_dim=cfg.input_dim,
+                output_dim=cfg.output_dim,
                 num_heads=4,
                 max_seq_len=4,
                 **hparams,
             )
         case "mlp":
-            return MLPModel(imput_dim=input_dim, output_dim=output_dim, **hparams)
+            return MultiLayerPerceptron(
+                input_dim=cfg.input_dim, output_dim=cfg.output_dim, **hparams
+            )
         case _:
             raise ValueError(
-                f"Invalid method '{cfg.method}'. Choose from: 'rnn' or 'mlp'"
+                f"Invalid method '{cfg.method}'. Choose from: 'rnn', 'lstm', 'mlp', or 'transformer'"
             )
-
-
-def make_model(
-    cfg: Config, input_dim: int, output_dim: int, checkpoints: Path | None = None
-):
-    if checkpoints:
-        best_model_path = get_best_checkpoint(ckpt_folder=checkpoints, mode="min")
-        return Network.load_from_checkpoint(checkpoint_path=best_model_path)
-    return Network(input_dim=input_dim, output_dim=output_dim, cfg=cfg)

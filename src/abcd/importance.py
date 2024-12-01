@@ -10,7 +10,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.utils import resample
 from tqdm import tqdm
 
-from abcd.config import Config, get_config
+from abcd.config import Config
+from abcd.tune import get_model
 
 
 def predict(x, model):
@@ -41,14 +42,8 @@ def regress_shap_values(df: pl.DataFrame, groups: list[str] | str, n_bootstraps:
     return df
 
 
-def make_shap(
-    cfg: Config,
-    model,
-    data_module: LightningDataModule,
-    analysis: str,
-    factor_model: str,
-):
-    cfg = get_config(analysis=analysis, factor_model=factor_model)
+def make_shap(cfg: Config, data_module: LightningDataModule):
+    model = get_model(cfg, best=True)
     test_dataloader = iter(data_module.test_dataloader())
     X = torch.cat([x for x, _ in test_dataloader])
     val_dataloader = iter(data_module.val_dataloader())
@@ -79,5 +74,5 @@ def make_shap(
         .rename({"respondent": "Respondent"})
         .filter(pl.col("dataset").ne("Follow-up event"))
     )
-    path = f"data/analyses/{factor_model}/{analysis}/results/"
+    path = f"data/analyses/{cfg.experiment.factor_model}/{cfg.experiment.analysis}/results/"
     shap_values.write_csv(path + "shap_values.csv")

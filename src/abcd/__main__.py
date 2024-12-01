@@ -10,10 +10,9 @@ from abcd.dataset import ABCDDataModule
 from abcd.evaluate import evaluate_model
 from abcd.importance import make_shap
 from abcd.metadata import make_metadata
-from abcd.model import make_model
 from abcd.plots import plot
+from abcd.process import get_dataset
 from abcd.tables import make_tables
-from abcd.transform import get_dataset
 from abcd.tune import tune
 
 
@@ -23,12 +22,13 @@ def make_experiment(cfg: Experiment):
 
 
 def main():
+    pl.enable_string_cache()
     pl.Config().set_tbl_cols(14)
     set_config(transform_output="polars")
     cfg = get_config(factor_model="within_event", analysis="metadata")
+    seed_everything(cfg.random_seed)
     if cfg.regenerate:
         make_metadata(cfg=cfg)
-    seed_everything(cfg.random_seed)
     experiment = make_experiment(cfg=cfg.experiment)
     for analysis, factor_model in experiment:
         if not any(
@@ -39,30 +39,18 @@ def main():
             ]
         ):
             continue
-        cfg = get_config(factor_model, analysis=analysis)
+        cfg = get_config(factor_model=factor_model, analysis=analysis)
         splits = get_dataset(cfg=cfg)
         data_module = ABCDDataModule(splits=splits, cfg=cfg)
-        input_dim = 1 if analysis == "autoregressive" else splits["train"].shape[-1] - 2
+        # -3 for split, sample id, and label
+        input_dim = 1 if analysis == "autoregressive" else splits["train"].shape[-1] - 3
+        cfg.model.input_dim = input_dim
         if cfg.tune:
-            tune(
-                cfg=cfg,
-                data_module=data_module,
-                input_dim=input_dim,
-                output_dim=cfg.preprocess.n_quantiles,
-            )
-        model = make_model(
-            input_dim=input_dim, output_dim=cfg.preprocess.n_quantiles, cfg=cfg
-        )
+            tune(cfg=cfg, data_module=data_module)
         if cfg.evaluate:
-            evaluate_model(data_module=data_module, cfg=cfg, model=model)
+            evaluate_model(cfg=cfg, data_module=data_module)
         if cfg.importance:
-            make_shap(
-                cfg=cfg,
-                model=model,
-                data_module=data_module,
-                analysis=analysis,
-                factor_model=factor_model,
-            )
+            make_shap(cfg=cfg, data_module=data_module)
     if cfg.tables:
         make_tables(cfg=cfg)
     if cfg.plot:

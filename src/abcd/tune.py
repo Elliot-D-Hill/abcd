@@ -1,40 +1,40 @@
 from functools import partial
 
 import optuna
+import polars as pl
 from optuna.samplers import QMCSampler, TPESampler
-from tomllib import load
 
 from abcd.config import Config
-from abcd.model import make_model, make_trainer
-from abcd.utils import cleanup_checkpoints
+from abcd.model import Network, make_trainer
 
 
 def make_params(trial: optuna.Trial, cfg: Config):
-    with open("config.toml", "rb") as f:
-        data = load(f)
-    data["model"]["hidden_dim"] = trial.suggest_int(**cfg.model.hidden_dim)
-    data["model"]["num_layers"] = trial.suggest_int(**cfg.model.num_layers)
-    data["model"]["dropout"] = trial.suggest_float(**cfg.model.dropout)
-    data["model"]["method"] = trial.suggest_categorical(**cfg.model.method)
-    data["optimizer"]["lr"] = trial.suggest_float(**cfg.optimizer.lr)
-    data["optimizer"]["weight_decay"] = trial.suggest_float(
-        **cfg.optimizer.weight_decay
-    )
-    data["optimizer"]["lambda_l1"] = trial.suggest_float(**cfg.optimizer.lambda_l1)
-    data["training"]["max_epochs"] = trial.suggest_int(**cfg.trainer.max_epochs)
-    return Config(**data)
+    hparams = cfg.hyperparameters
+    cfg.model.method = trial.suggest_categorical(**hparams.model.method)
+    cfg.model.hidden_dim = trial.suggest_int(**hparams.model.hidden_dim)
+    cfg.model.num_layers = trial.suggest_int(**hparams.model.num_layers)
+    cfg.model.dropout = trial.suggest_float(**hparams.model.dropout)
+    cfg.optimizer.lr = trial.suggest_float(**hparams.optimizer.lr)
+    cfg.optimizer.weight_decay = trial.suggest_float(**hparams.optimizer.weight_decay)
+    cfg.optimizer.lambda_l1 = trial.suggest_float(**hparams.optimizer.lambda_l1)
+    cfg.trainer.max_epochs = trial.suggest_int(**hparams.trainer.max_epochs)
+    return cfg
 
 
-def objective(
-    trial: optuna.Trial, cfg: Config, data_module, input_dim: int, output_dim: int
-):
-    cfg = make_params(trial, cfg)
-    model = make_model(input_dim=input_dim, output_dim=output_dim, cfg=cfg)
+def get_model(cfg: Config, best: bool = False):
+    if best:
+        filepath = cfg.filepaths.data.results.best_model
+        return Network.load_from_checkpoint(checkpoint_path=filepath)
+    return Network(cfg=cfg)
+
+
+def objective(trial: optuna.Trial, cfg: Config, data_module):
+    cfg = make_params(trial, cfg=cfg)
+    model = get_model(cfg=cfg)
     trainer = make_trainer(cfg=cfg, checkpoint=True)
     trainer.fit(model, datamodule=data_module)
-    cleanup_checkpoints(cfg.filepaths.data.results.checkpoints, mode="min")
-    loss = trainer.checkpoint_callbacks[0].best_model_score.item()  # type: ignore
-    return loss
+    metrics = trainer.validate(model, datamodule=data_module, ckpt_path="last")
+    return metrics[-1]["val_loss"]
 
 
 def get_sampler(cfg: Config):
@@ -52,18 +52,12 @@ def get_sampler(cfg: Config):
     return sampler
 
 
-def tune(cfg: Config, data_module, input_dim: int, output_dim: int):
+def tune(cfg: Config, data_module):
     sampler = get_sampler(cfg=cfg)
     study = optuna.create_study(
-        sampler=sampler, directions="minimize", study_name="ABCD"
+        sampler=sampler, direction="minimize", study_name="ABCD"
     )
-    objective_function = partial(
-        objective,
-        cfg=cfg,
-        data_module=data_module,
-        input_dim=input_dim,
-        output_dim=output_dim,
-    )
+    objective_function = partial(objective, cfg=cfg, data_module=data_module)
     study.optimize(func=objective_function, n_trials=cfg.tuner.n_trials)
-    df = study.trials_dataframe()
-    df.to_csv("data/study.csv", index=False)
+    df = pl.DataFrame(study.trials_dataframe())
+    df.write_parquet("data/study.parquet")
