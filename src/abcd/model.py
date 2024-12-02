@@ -56,6 +56,7 @@ class SequenceModel(nn.Module):
             dropout=dropout if num_layers > 1 else 0.0,
             num_layers=num_layers,
             batch_first=True,
+            bidirectional=False,
             # nonlinearity="tanh",
         )
         self.fc = nn.Linear(in_features=hidden_dim, out_features=output_dim)
@@ -147,6 +148,14 @@ class Network(LightningModule):
     def forward(self, inputs):
         return self.model(inputs)
 
+    def l1_loss(self):
+        match self.model:
+            case SequenceModel():
+                return self.lambda_l1 * torch.norm(self.model.rnn.weight_ih_l0)
+            case MultiLayerPerceptron():
+                return self.lambda_l1 * torch.norm(self.model.mlp[0].weight)
+        return self.lambda_l1 * torch.norm(self.model.rnn.weight_ih_l0)
+
     def step(self, step: str, batch):
         inputs, labels = batch
         outputs = self(inputs)
@@ -155,7 +164,7 @@ class Network(LightningModule):
         loss = self.criterion(outputs, labels)
         loss = loss[~torch.isnan(loss)]
         loss = loss.mean()
-        loss = loss + self.lambda_l1 * torch.norm(self.model.rnn.weight_ih_l0)
+        loss = loss + self.lambda_l1 * self.l1_loss()
         metrics = make_metrics(step, loss, outputs, labels)
         self.log_dict(metrics, prog_bar=True)
         return loss

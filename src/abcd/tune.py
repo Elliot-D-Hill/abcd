@@ -39,13 +39,16 @@ class Objective:
         cfg = make_params(trial, cfg=self.cfg)
         model = get_model(cfg=cfg)
         trainer = make_trainer(cfg=cfg, checkpoint=True)
+        path = Path(cfg.filepaths.data.results.checkpoints / "last.ckpt")
+        if path.exists():
+            path.unlink()
         trainer.fit(model, datamodule=self.data_module)
         metrics = trainer.validate(model, datamodule=self.data_module, ckpt_path="last")
-        if metrics[-1]["val_loss"] < self.best_val_loss:
-            self.best_val_loss = metrics[-1]["val_loss"]
-            trainer.save_checkpoint("best.ckpt")
-        Path(cfg.filepaths.data.results.checkpoints / "last.ckpt").unlink()
-        return metrics[-1]["val_loss"]
+        val_loss = metrics[-1]["val_loss"]
+        if val_loss < self.best_val_loss:
+            self.best_val_loss = val_loss
+            trainer.save_checkpoint(path.with_name("best.ckpt"))
+        return val_loss
 
 
 def get_sampler(cfg: Config):
