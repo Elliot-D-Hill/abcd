@@ -1,5 +1,4 @@
 from copy import deepcopy
-from multiprocessing import cpu_count
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -7,6 +6,7 @@ from tomllib import load
 
 
 class Splits(BaseModel):
+    path: Path
     train: Path
     val: Path
     test: Path
@@ -63,11 +63,7 @@ class Dataloader(BaseModel):
     num_workers: int | str
     pin_memory: bool
     persistent_workers: bool
-    multiprocessing_context: str
-
-    def __post_init__(self):
-        if self.num_workers == "auto":
-            self.num_workers = cpu_count()
+    multiprocessing_context: str | None = None
 
 
 class Trainer(BaseModel):

@@ -74,5 +74,4 @@ def make_labels(cfg: Config) -> pl.LazyFrame:
     df = filter_null_rows(df=df, columns=cs.by_name(cfg.features.mh_p_cbcl.columns))
     df = apply_transformer(df=df.collect(), cfg=cfg).lazy()
     df = shift_y(df=df, cfg=cfg)
-    df = df.with_columns(cs.string().cast(pl.Categorical))
     return df

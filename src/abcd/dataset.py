@@ -1,16 +1,13 @@
 from functools import partial
-from pathlib import Path
 
+import numpy as np
 import polars as pl
+import torch
 from lightning import LightningDataModule
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
 
 from abcd.config import Config
-
-
-def make_parquet_dataset(path: Path, sample_id: str, dataset: pl.DataFrame):
-    dataset.write_parquet(path, partition_by=sample_id)
 
 
 def make_tensor_dataset(cfg: Config, dataset: pl.DataFrame):
@@ -27,14 +24,30 @@ def make_tensor_dataset(cfg: Config, dataset: pl.DataFrame):
 
 
 class TimeSeriesDataset(Dataset):
-    def __init__(self, cfg: Config, dataset: pl.DataFrame) -> None:
-        self.dataset = make_tensor_dataset(cfg=cfg, dataset=dataset)
+    def __init__(self, cfg: Config, data: pl.DataFrame) -> None:
+        self.dataset = make_tensor_dataset(cfg=cfg, dataset=data)
 
     def __len__(self):
         return len(self.dataset)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
         features, labels = self.dataset[index]
+        return features, labels
+
+
+class FileDataset(Dataset):
+    def __init__(self, cfg: Config, data: list[str]) -> None:
+        self.files = data
+        self.cfg = cfg
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
+        filepath = self.files[index]
+        data = np.load(filepath)
+        features = torch.tensor(data["features"], dtype=torch.float32)
+        labels = torch.tensor(data["label"], dtype=torch.float32).squeeze(1)
         return features, labels
 
 
@@ -45,26 +58,37 @@ def collate_fn(batch):
     return padded_features, padded_labels
 
 
+def init_datasets(splits: dict[str, pl.DataFrame | list[str]], cfg: Config):
+    match splits["train"], splits["val"], splits["test"]:
+        case list(), list(), list():
+            train = FileDataset(cfg=cfg, data=splits["train"])
+            val = FileDataset(cfg=cfg, data=splits["val"])
+            test = FileDataset(cfg=cfg, data=splits["test"])
+        case pl.DataFrame(), pl.DataFrame(), pl.DataFrame():
+            train = TimeSeriesDataset(cfg=cfg, data=splits["train"])
+            val = TimeSeriesDataset(cfg=cfg, data=splits["val"])
+            test = TimeSeriesDataset(cfg=cfg, data=splits["test"])
+    return train, val, test
+
+
 class ABCDDataModule(LightningDataModule):
-    def __init__(self, splits: dict[str, pl.DataFrame], cfg: Config) -> None:
+    def __init__(
+        self, splits: dict[str, pl.DataFrame | list[str]], cfg: Config
+    ) -> None:
         super().__init__()
-        self.train_dataset = TimeSeriesDataset(cfg=cfg, dataset=splits["train"])
-        self.val_dataset = TimeSeriesDataset(cfg=cfg, dataset=splits["val"])
-        self.test_dataset = TimeSeriesDataset(cfg=cfg, dataset=splits["test"])
-        self.feature_names = (
-            splits["train"].drop([cfg.index.sample_id, cfg.index.label]).columns
-        )
+        train, val, test = init_datasets(splits=splits, cfg=cfg)
+        self.train = train
+        self.val = val
+        self.test = test
         self.loader = partial(
-            DataLoader,
-            **cfg.dataloader.model_dump(),
-            collate_fn=collate_fn,
+            DataLoader, **cfg.dataloader.model_dump(), collate_fn=collate_fn
         )
 
     def train_dataloader(self):
-        return self.loader(self.train_dataset, shuffle=True, drop_last=True)
+        return self.loader(self.train, shuffle=True, drop_last=True)
 
     def val_dataloader(self):
-        return DataLoader(self.val_dataset, shuffle=False)
+        return self.loader(self.val, shuffle=False)
 
     def test_dataloader(self):
-        return DataLoader(self.test_dataset, shuffle=False)
+        return self.loader(self.test, shuffle=False)

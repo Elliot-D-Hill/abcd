@@ -56,7 +56,7 @@ class SequenceModel(nn.Module):
             dropout=dropout if num_layers > 1 else 0.0,
             num_layers=num_layers,
             batch_first=True,
-            nonlinearity="tanh",
+            # nonlinearity="tanh",
         )
         self.fc = nn.Linear(in_features=hidden_dim, out_features=output_dim)
 
@@ -85,8 +85,10 @@ class Transformer(nn.Module):
     ):
         super().__init__()
         self.positional_encoding = nn.Parameter(torch.randn(1, max_seq_len, input_dim))
+        hidden_dim = num_heads * round(hidden_dim / num_heads)
+        self.input_fc = nn.Linear(in_features=input_dim, out_features=hidden_dim)
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=input_dim,
+            d_model=hidden_dim,
             nhead=num_heads,
             dim_feedforward=hidden_dim,
             dropout=dropout,
@@ -102,7 +104,10 @@ class Transformer(nn.Module):
         x = x + self.positional_encoding
         mask = generate_mask(x.size(1)).to(x.device)
         padding_mask = (x == 0.0).all(dim=-1)
-        out = self.transformer_encoder(x, mask=mask, src_key_padding_mask=padding_mask)
+        out = self.input_fc(x)
+        out = self.transformer_encoder(
+            out, mask=mask, src_key_padding_mask=padding_mask
+        )
         out = out.mean(dim=1)
         out = self.output_fc(out)
         return out
@@ -132,7 +137,7 @@ class Network(LightningModule):
         super().__init__()
         self.save_hyperparameters(logger=False)
         self.model = make_architecture(cfg=cfg.model)
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss(reduction="none")
         self.optimizer = SGD(
             self.model.parameters(), **cfg.optimizer.model_dump(exclude={"lambda_l1"})
         )
@@ -145,8 +150,11 @@ class Network(LightningModule):
     def step(self, step: str, batch):
         inputs, labels = batch
         outputs = self(inputs)
-        outputs, labels = drop_nan(outputs, labels)
-        loss = self.criterion(outputs.squeeze(1), labels)
+        outputs = outputs.view(-1, outputs.shape[-1])
+        labels = labels.view(-1)
+        loss = self.criterion(outputs, labels)
+        loss = loss[~torch.isnan(loss)]
+        loss = loss.mean()
         loss = loss + self.lambda_l1 * torch.norm(self.model.rnn.weight_ih_l0)
         metrics = make_metrics(step, loss, outputs, labels)
         self.log_dict(metrics, prog_bar=True)
@@ -205,9 +213,7 @@ def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
 
 def make_architecture(cfg: Model):
     hparams = cfg.model_dump(exclude={"method"})
-    sequence_model = partial(
-        SequenceModel, input_dim=cfg.input_dim, output_dim=cfg.output_dim, **hparams
-    )
+    sequence_model = partial(SequenceModel, **hparams)
     match cfg.method:
         case "rnn":
             return sequence_model(method=nn.RNN)
@@ -215,16 +221,10 @@ def make_architecture(cfg: Model):
             return sequence_model(method=nn.LSTM)
         case "transformer":
             return Transformer(
-                input_dim=cfg.input_dim,
-                output_dim=cfg.output_dim,
-                num_heads=4,
-                max_seq_len=4,
-                **hparams,
-            )
+                num_heads=4, max_seq_len=2, **hparams
+            )  # FIXME: max_seq_len
         case "mlp":
-            return MultiLayerPerceptron(
-                input_dim=cfg.input_dim, output_dim=cfg.output_dim, **hparams
-            )
+            return MultiLayerPerceptron(**hparams)
         case _:
             raise ValueError(
                 f"Invalid method '{cfg.method}'. Choose from: 'rnn', 'lstm', 'mlp', or 'transformer'"

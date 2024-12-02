@@ -22,29 +22,19 @@ def make_experiment(cfg: Experiment):
 
 
 def main():
-    pl.enable_string_cache()
     pl.Config().set_tbl_cols(14)
     set_config(transform_output="polars")
     cfg = get_config(factor_model="within_event", analysis="metadata")
     seed_everything(cfg.random_seed)
-    if cfg.regenerate:
-        make_metadata(cfg=cfg)
+    make_metadata(cfg=cfg)
     experiment = make_experiment(cfg=cfg.experiment)
     for analysis, factor_model in experiment:
-        if not any(
-            [
-                cfg.evaluate,
-                cfg.tune,
-                cfg.importance,
-            ]
-        ):
+        if not any([cfg.regenerate, cfg.evaluate, cfg.tune, cfg.importance]):
             continue
         cfg = get_config(factor_model=factor_model, analysis=analysis)
         splits = get_dataset(cfg=cfg)
         data_module = ABCDDataModule(splits=splits, cfg=cfg)
-        # -3 for split, sample id, and label
-        input_dim = 1 if analysis == "autoregressive" else splits["train"].shape[-1] - 3
-        cfg.model.input_dim = input_dim
+        cfg.model.input_dim = data_module.train[0][0].shape[-1]
         if cfg.tune:
             tune(cfg=cfg, data_module=data_module)
         if cfg.evaluate:

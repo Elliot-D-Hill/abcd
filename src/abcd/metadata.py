@@ -34,12 +34,14 @@ def make_subject_metadata(df: pl.LazyFrame) -> pl.LazyFrame:
             .fill_null(strategy="forward")
             .over("src_subject_id")
         )
-        .with_columns(cs.string().cast(pl.Categorical), cs.numeric().shrink_dtype())
+        .with_columns(cs.numeric().shrink_dtype())
     )
     return df
 
 
 def make_metadata(cfg: Config) -> None:
+    if not cfg.regenerate:
+        return
     dfs = get_datasets(cfg=cfg)
     make_variable_metadata(cfg=cfg, dfs=dfs)
     df = join_dataframes(dfs=dfs, on=cfg.index.join_on, how="left")

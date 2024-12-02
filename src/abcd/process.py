@@ -1,5 +1,7 @@
 from collections import defaultdict
+from glob import glob
 
+import numpy as np
 import polars as pl
 import polars.selectors as cs
 from nanuk.preprocess import drop_null_columns, filter_null_rows, join_dataframes
@@ -64,7 +66,7 @@ def get_datasets(cfg: Config) -> list[pl.LazyFrame]:
             .filter(pl.col(cfg.index.event).is_in(EVENTS))
             .pipe(filter_null_rows, columns=cs.numeric())
             .pipe(drop_null_columns, cutoff=cfg.preprocess.null_cutoff)
-            .with_columns(cs.string().cast(pl.Categorical), cs.numeric().shrink_dtype())
+            .with_columns(cs.numeric().shrink_dtype())
         )
         dfs.append(df)
     return dfs
@@ -82,9 +84,7 @@ def get_mri_data(cfg: Config) -> list[pl.LazyFrame]:
         )
         df = df.filter(pl.col(cfg.index.event).is_in(EVENTS))
         df = df.pipe(drop_null_columns, cutoff=cfg.preprocess.null_cutoff)
-        df = df.with_columns(
-            cs.string().cast(pl.Categorical), cs.numeric().shrink_dtype()
-        )
+        df = df.with_columns(cs.numeric().shrink_dtype())
         dfs.append(df)
     return dfs
 
@@ -140,7 +140,7 @@ def get_features(cfg: Config) -> pl.Expr:
     return selection.exclude(*exclude)
 
 
-def make_dataset(cfg: Config) -> pl.LazyFrame:
+def collect_datasets(cfg: Config) -> pl.LazyFrame:
     datasets = get_data(cfg=cfg)
     df = join_dataframes(dfs=datasets, on=cfg.index.join_on, how="left")
     features = get_features(cfg=cfg)
@@ -149,7 +149,7 @@ def make_dataset(cfg: Config) -> pl.LazyFrame:
 
 
 def transform_dataset(cfg: Config) -> pl.LazyFrame:
-    df = make_dataset(cfg=cfg)
+    df = collect_datasets(cfg=cfg)
     label_columns = cs.by_name(cfg.index.split, *cfg.index.join_on, cfg.index.label)
     metadata = pl.scan_parquet(cfg.filepaths.data.processed.metadata)
     labels = metadata.select(label_columns)
@@ -160,18 +160,47 @@ def transform_dataset(cfg: Config) -> pl.LazyFrame:
     imputation = impute(columns, method="median", train=train)
     transforms = [scale, imputation]
     df = pipeline(df, transforms, over=cfg.index.event)
-    df = df.select(label_columns, cs.exclude(label_columns)).with_columns(
-        pl.col(cfg.index.event).replace_strict(EVENTS_TO_VALUES, default=None)
+    df = (
+        df.with_columns(
+            pl.col(cfg.index.event).replace_strict(EVENTS_TO_VALUES, default=None),
+        )
+        .select(label_columns, cs.exclude(label_columns))
+        .drop(cs.string() & ~cs.by_name(cfg.index.split, cfg.index.sample_id))
     )
     return df
 
 
-def get_dataset(cfg: Config) -> dict[str, pl.DataFrame]:
-    if cfg.regenerate:
-        df = transform_dataset(cfg=cfg)
-        df.collect().write_parquet(
-            "data/analyses/within_event/mri/analytic/", partition_by=cfg.index.split
+def make_mri_dataset(cfg: Config, df: pl.DataFrame) -> None:
+    by = [cfg.index.split, cfg.index.sample_id]
+    for (split, sample), group in df.group_by(by, maintain_order=True):
+        label = group.select(cfg.index.label).to_numpy().astype(np.float32)
+        features = (
+            group.drop(cfg.index.split, cfg.index.sample_id, cfg.index.label)
+            .to_numpy()
+            .astype(np.float32)
         )
-    df = pl.read_parquet(cfg.filepaths.data.processed.dataset)
-    splits = df.partition_by(cfg.index.split, as_dict=True)
-    return {str(names[0]): split for names, split in splits.items()}
+        path = str(cfg.filepaths.data.analytic.path / f"{split}" / f"{sample}.npz")
+        np.savez(path, features=features, label=label)
+
+
+def make_dataset(cfg: Config) -> None:
+    df = transform_dataset(cfg=cfg).collect()
+    if cfg.experiment.analysis == "mri":
+        make_mri_dataset(cfg=cfg, df=df)
+    else:
+        for split, group in df.group_by(cfg.index.split):
+            group.write_parquet(cfg.filepaths.data.analytic.path / f"{split}.parquet")
+
+
+def get_dataset(cfg: Config) -> dict[str, pl.DataFrame | list[str]]:
+    if cfg.regenerate:
+        make_dataset(cfg=cfg)
+    if cfg.experiment.analysis == "mri":
+        train = glob(str(cfg.filepaths.data.analytic.path / "train/*.npz"))
+        val = glob(str(cfg.filepaths.data.analytic.path / "val/*.npz"))
+        test = glob(str(cfg.filepaths.data.analytic.path / "test/*.npz"))
+    else:
+        train = pl.read_parquet(cfg.filepaths.data.analytic.train)
+        val = pl.read_parquet(cfg.filepaths.data.analytic.val)
+        test = pl.read_parquet(cfg.filepaths.data.analytic.test)
+    return {"train": train, "val": val, "test": test}

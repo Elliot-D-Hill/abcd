@@ -56,8 +56,8 @@ val = 0.1
 test = 0.1
 
 [dataloader]
-batch_size = 1028
-num_workers = "auto"
+batch_size = 512
+num_workers = 10
 pin_memory = true
 persistent_workers = true
 multiprocessing_context = "fork"
@@ -111,11 +111,11 @@ low = 0.9
 high = 0.99
 [hyperparameters.model.method]
 name = "method"
-choices = ["mlp", "swem", "rnn", "lstm", "transformer"]
+choices = ["mlp", "rnn", "lstm"]
 [hyperparameters.model.hidden_dim]
 name = "hidden_dim"
 low = 32
-high = 256
+high = 128
 [hyperparameters.model.dropout]
 name = "dropout"
 low = 0.0
@@ -140,9 +140,9 @@ plots = "data/plots/"
 labels = "data/raw/features/mh_p_cbcl.csv"
 dataset = "data/raw/dataset.parquet"
 metadata = "data/raw/metadata.parquet"
-features = "data/raw/features/"
+features = "data/raw/features"
 mri = "data/raw/imaging"
-splits = "data/raw/splits/"
+splits = "data/raw/splits"
 [filepaths.data.processed]
 labels = "data/processed/labels.parquet"
 features = "data/processed/features.parquet"
@@ -150,12 +150,13 @@ dataset = "data/processed/dataset.parquet"
 metadata = "data/processed/metadata.parquet"
 subject_metadata = "data/processed/subject_metadata.parquet"
 [filepaths.data.analytic]
+path = "analytic/"
 train = "analytic/train.parquet"
 val = "analytic/val.parquet"
 test = "analytic/test.parquet"
 [filepaths.data.results]
-metrics = "results/metrics/"
-checkpoints = "results/checkpoints/"
+metrics = "results/metrics"
+checkpoints = "results/checkpoints"
 best_model = "results/checkpoints/best.ckpt"
 study = "results/study.pkl"
 logs = "results/lightning_logs"

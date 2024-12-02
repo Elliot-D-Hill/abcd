@@ -1,10 +1,11 @@
-from functools import partial
+from pathlib import Path
 
 import optuna
 import polars as pl
 from optuna.samplers import QMCSampler, TPESampler
 
 from abcd.config import Config
+from abcd.dataset import ABCDDataModule
 from abcd.model import Network, make_trainer
 
 
@@ -28,13 +29,23 @@ def get_model(cfg: Config, best: bool = False):
     return Network(cfg=cfg)
 
 
-def objective(trial: optuna.Trial, cfg: Config, data_module):
-    cfg = make_params(trial, cfg=cfg)
-    model = get_model(cfg=cfg)
-    trainer = make_trainer(cfg=cfg, checkpoint=True)
-    trainer.fit(model, datamodule=data_module)
-    metrics = trainer.validate(model, datamodule=data_module, ckpt_path="last")
-    return metrics[-1]["val_loss"]
+class Objective:
+    def __init__(self, cfg: Config, data_module: ABCDDataModule):
+        self.cfg = cfg
+        self.data_module = data_module
+        self.best_val_loss = float("inf")
+
+    def __call__(self, trial: optuna.Trial):
+        cfg = make_params(trial, cfg=self.cfg)
+        model = get_model(cfg=cfg)
+        trainer = make_trainer(cfg=cfg, checkpoint=True)
+        trainer.fit(model, datamodule=self.data_module)
+        metrics = trainer.validate(model, datamodule=self.data_module, ckpt_path="last")
+        if metrics[-1]["val_loss"] < self.best_val_loss:
+            self.best_val_loss = metrics[-1]["val_loss"]
+            trainer.save_checkpoint("best.ckpt")
+        Path(cfg.filepaths.data.results.checkpoints / "last.ckpt").unlink()
+        return metrics[-1]["val_loss"]
 
 
 def get_sampler(cfg: Config):
@@ -57,7 +68,7 @@ def tune(cfg: Config, data_module):
     study = optuna.create_study(
         sampler=sampler, direction="minimize", study_name="ABCD"
     )
-    objective_function = partial(objective, cfg=cfg, data_module=data_module)
+    objective_function = Objective(cfg=cfg, data_module=data_module)
     study.optimize(func=objective_function, n_trials=cfg.tuner.n_trials)
     df = pl.DataFrame(study.trials_dataframe())
     df.write_parquet("data/study.parquet")
