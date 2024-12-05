@@ -57,7 +57,6 @@ class SequenceModel(nn.Module):
             num_layers=num_layers,
             batch_first=True,
             bidirectional=False,
-            # nonlinearity="tanh",
         )
         self.fc = nn.Linear(in_features=hidden_dim, out_features=output_dim)
 
@@ -138,7 +137,7 @@ class Network(LightningModule):
         super().__init__()
         self.save_hyperparameters(logger=False)
         self.model = make_architecture(cfg=cfg.model)
-        self.criterion = nn.CrossEntropyLoss(reduction="none")
+        self.criterion = nn.CrossEntropyLoss()
         self.optimizer = SGD(
             self.model.parameters(), **cfg.optimizer.model_dump(exclude={"lambda_l1"})
         )
@@ -154,17 +153,18 @@ class Network(LightningModule):
                 return self.lambda_l1 * torch.norm(self.model.rnn.weight_ih_l0)
             case MultiLayerPerceptron():
                 return self.lambda_l1 * torch.norm(self.model.mlp[0].weight)
-        return self.lambda_l1 * torch.norm(self.model.rnn.weight_ih_l0)
+            case _:
+                raise ValueError(
+                    f"L1 regularization not implemented for {type(self.model)}"
+                )
 
     def step(self, step: str, batch):
         inputs, labels = batch
-        outputs = self(inputs)
-        outputs = outputs.view(-1, outputs.shape[-1])
-        labels = labels.view(-1)
+        outputs = self(inputs).flatten(0, 1)
+        labels = labels.flatten()
+        outputs, labels = drop_nan(outputs, labels)
         loss = self.criterion(outputs, labels)
-        loss = loss[~torch.isnan(loss)]
-        loss = loss.mean()
-        loss = loss + self.lambda_l1 * self.l1_loss()
+        loss = loss + self.l1_loss()
         metrics = make_metrics(step, loss, outputs, labels)
         self.log_dict(metrics, prog_bar=True)
         return loss
@@ -236,5 +236,5 @@ def make_architecture(cfg: Model):
             return MultiLayerPerceptron(**hparams)
         case _:
             raise ValueError(
-                f"Invalid method '{cfg.method}'. Choose from: 'rnn', 'lstm', 'mlp', or 'transformer'"
+                f"Invalid method '{cfg.method}'. Choose from: 'rnn', 'lstm', 'mlp', 'moe', or 'transformer'"
             )

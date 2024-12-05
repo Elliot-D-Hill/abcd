@@ -126,7 +126,7 @@ def get_features(cfg: Config) -> pl.Expr:
             selection = cs.all()
         case "questions_mri":
             selection = cs.exclude(cfg.features.mh_p_cbcl.columns)
-        case "questions" | "all":
+        case "questions" | "all" | "site":
             selection = cs.exclude(cfg.features.mh_p_cbcl.columns + brain_features)
         case "questions_symptoms":
             selection = cs.exclude(brain_features)
@@ -160,6 +160,12 @@ def transform_dataset(cfg: Config) -> pl.LazyFrame:
     imputation = impute(columns, method="median", train=train)
     transforms = [scale, imputation]
     df = pipeline(df, transforms, over=cfg.index.event)
+    df = df.with_columns(
+        pl.all()
+        .fill_null(strategy="forward")
+        .over(cfg.index.sample_id)
+        .fill_null(strategy="mean")
+    )
     df = (
         df.with_columns(
             pl.col(cfg.index.event).replace_strict(EVENTS_TO_VALUES, default=None),
@@ -189,7 +195,9 @@ def make_dataset(cfg: Config) -> None:
         make_mri_dataset(cfg=cfg, df=df)
     else:
         for split, group in df.group_by(cfg.index.split):
-            group.write_parquet(cfg.filepaths.data.analytic.path / f"{split}.parquet")
+            group.write_parquet(
+                cfg.filepaths.data.analytic.path / f"{split[0]}.parquet"
+            )
 
 
 def get_dataset(cfg: Config) -> dict[str, pl.DataFrame | list[str]]:

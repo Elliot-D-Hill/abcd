@@ -55,7 +55,7 @@ def collate_fn(batch):
     features, labels = zip(*batch)
     padded_features = pad_sequence(features, batch_first=True, padding_value=0)
     padded_labels = pad_sequence(labels, batch_first=True, padding_value=float("nan"))
-    return padded_features, padded_labels
+    return padded_features, padded_labels.squeeze(-1)
 
 
 def init_datasets(splits: dict[str, pl.DataFrame | list[str]], cfg: Config):

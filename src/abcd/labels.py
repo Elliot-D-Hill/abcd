@@ -60,17 +60,27 @@ def shift_y(df: pl.LazyFrame, cfg: Config) -> pl.LazyFrame:
 
 def make_labels(cfg: Config) -> pl.LazyFrame:
     columns = cfg.index.join_on + cfg.features.mh_p_cbcl.columns
+    sites = pl.scan_csv(cfg.filepaths.data.raw.features / "abcd_y_lt.csv").select(
+        *cfg.index.join_on, cfg.index.site
+    )
     df = (
         pl.scan_csv(cfg.filepaths.data.raw.labels)
         .select(columns)
         .filter(pl.col(cfg.index.event).is_in(EVENTS))
     )
+    df = df.join(sites, on=cfg.index.join_on, how="inner")
     assignment = assign_splits(
         splits=cfg.preprocess.splits,
         group=cfg.experiment.split_on,
         name=cfg.index.split,
     )
     df = df.with_columns(assignment)
+    site_per_split = (
+        df.select(cfg.index.split, cfg.index.site)
+        .group_by(cfg.index.split)
+        .agg(pl.col(cfg.index.site).n_unique().alias("n_sites"))
+    )
+    print(site_per_split.collect())
     df = filter_null_rows(df=df, columns=cs.by_name(cfg.features.mh_p_cbcl.columns))
     df = apply_transformer(df=df.collect(), cfg=cfg).lazy()
     df = shift_y(df=df, cfg=cfg)

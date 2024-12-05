@@ -17,12 +17,14 @@ sample_id = "src_subject_id"
 event = "eventname"
 label = "y_{t+1}"
 split = "split"
+site = "site_id_l"
 
 [experiment]
-factor_models = ["within_event"] # , "across_event", "ksads"]
 factor_model = "within_event"
+factor_models = ["within_event"] # , "across_event", "ksads"]
 analyses = [
-    "mri",
+    "site",
+    # "mri",
     # "questions",
     # "questions_mri",
     # "questions_symptoms",
@@ -30,8 +32,8 @@ analyses = [
     # "questions_mri_symptoms",
     # "autoregressive",
 ]
-analysis = "mri"
-split_on = "src_subject_id" # sample_id, site_id
+analysis = "site"
+split_on = "site_id_l" # sample_id, site_id
 
 [preprocess]
 n_neighbors = 5
@@ -97,12 +99,12 @@ high = 1e-2
 log = true
 [hyperparameters.optimizer.weight_decay]
 name = "weight_decay"
-low = 1e-8
+low = 1e-9
 high = 1e-2
 log = true
 [hyperparameters.optimizer.lambda_l1]
 name = "lambda_l1"
-low = 1e-8
+low = 1e-9
 high = 1e-2
 log = true
 [hyperparameters.optimizer.momentum]
@@ -111,19 +113,20 @@ low = 0.9
 high = 0.99
 [hyperparameters.model.method]
 name = "method"
-choices = ["mlp", "rnn", "lstm"]
+low = 0
+high = 3
 [hyperparameters.model.hidden_dim]
 name = "hidden_dim"
 low = 32
-high = 128
+high = 256
 [hyperparameters.model.dropout]
 name = "dropout"
 low = 0.0
-high = 0.75
+high = 0.80
 [hyperparameters.model.num_layers]
 name = "num_layers"
 low = 1
-high = 3
+high = 4
 
 [logging]
 checkpoint_every_n_steps = 1
@@ -197,7 +200,7 @@ columns = [
 [features.abcd_y_lt]
 name = "Demographics"
 respondent = "Parent"
-columns = ["interview_age", "interview_date"] # , "site_id_l"
+columns = ["interview_age", "interview_date", "site_id_l"] # , 
 [features.abcd_aces]
 name = "Adverse childhood experiences (ACEs)"
 respondent = "Parent"                         # TODO check if this is from parent, youth, or both

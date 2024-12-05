@@ -8,10 +8,13 @@ from abcd.config import Config
 from abcd.dataset import ABCDDataModule
 from abcd.model import Network, make_trainer
 
+METHODS = {0: "mlp", 1: "rnn", 2: "lstm", 3: "moe"}
+
 
 def make_params(trial: optuna.Trial, cfg: Config):
     hparams = cfg.hyperparameters
-    cfg.model.method = trial.suggest_categorical(**hparams.model.method)
+    method_index = trial.suggest_int(**hparams.model.method)
+    cfg.model.method = METHODS[method_index]
     cfg.model.hidden_dim = trial.suggest_int(**hparams.model.hidden_dim)
     cfg.model.num_layers = trial.suggest_int(**hparams.model.num_layers)
     cfg.model.dropout = trial.suggest_float(**hparams.model.dropout)
@@ -47,31 +50,20 @@ class Objective:
         val_loss = metrics[-1]["val_loss"]
         if val_loss < self.best_val_loss:
             self.best_val_loss = val_loss
-            trainer.save_checkpoint(path.with_name("best.ckpt"))
+            # trainer.save_checkpoint(path.with_name("best.ckpt"))
         return val_loss
 
 
-def get_sampler(cfg: Config):
-    half_trials = cfg.tuner.n_trials // 2
-    if cfg.tuner.sampler == "tpe":
-        sampler = TPESampler(
-            multivariate=True, n_startup_trials=half_trials, seed=cfg.random_seed
-        )
-    elif cfg.tuner.sampler == "qmc":
-        sampler = QMCSampler(seed=cfg.random_seed)
-    else:
-        raise ValueError(
-            f"Invalid sampler '{cfg.tuner.sampler}'. Choose from: 'tpe', 'qmc'"
-        )
-    return sampler
-
-
 def tune(cfg: Config, data_module):
-    sampler = get_sampler(cfg=cfg)
+    sampler = QMCSampler(seed=cfg.random_seed)
     study = optuna.create_study(
         sampler=sampler, direction="minimize", study_name="ABCD"
     )
-    objective_function = Objective(cfg=cfg, data_module=data_module)
-    study.optimize(func=objective_function, n_trials=cfg.tuner.n_trials)
+    objective = Objective(cfg=cfg, data_module=data_module)
+    half_trials = cfg.tuner.n_trials // 2
+    study.optimize(func=objective, n_trials=half_trials)
+    sampler = TPESampler(multivariate=True, seed=cfg.random_seed)
+    study.sampler = sampler
+    study.optimize(func=objective, n_trials=half_trials)
     df = pl.DataFrame(study.trials_dataframe())
     df.write_parquet("data/study.parquet")

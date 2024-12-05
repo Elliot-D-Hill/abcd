@@ -5,50 +5,21 @@ from pydantic import BaseModel
 from tomllib import load
 
 
-class Splits(BaseModel):
-    path: Path
-    train: Path
-    val: Path
-    test: Path
+class Experiment(BaseModel):
+    analyses: list[str]
+    analysis: str
+    factor_models: list[str]
+    factor_model: str
+    split_on: str
 
 
-class Raw(BaseModel):
-    labels: Path
-    dataset: Path
-    metadata: Path
-    features: Path
-    mri: Path
-    splits: Path
-
-
-class Processed(BaseModel):
-    labels: Path
-    features: Path
-    dataset: Path
-    metadata: Path
-    subject_metadata: Path
-
-
-class Results(BaseModel):
-    metrics: Path
-    checkpoints: Path
-    best_model: Path
-    study: Path
-    logs: Path
-    predictions: Path
-
-
-class Data(BaseModel):
-    raw: Raw
-    processed: Processed
-    analytic: Splits
-    results: Results
-
-
-class Filepaths(BaseModel):
-    tables: Path
-    plots: Path
-    data: Data
+class Index(BaseModel):
+    join_on: list[str]
+    sample_id: str
+    event: str
+    label: str
+    split: str
+    site: str
 
 
 class Preprocess(BaseModel):
@@ -132,6 +103,52 @@ class Dataset(BaseModel):
     columns: list[str]
 
 
+class Splits(BaseModel):
+    path: Path
+    train: Path
+    val: Path
+    test: Path
+
+
+class Raw(BaseModel):
+    labels: Path
+    dataset: Path
+    metadata: Path
+    features: Path
+    mri: Path
+    splits: Path
+
+
+class Processed(BaseModel):
+    labels: Path
+    features: Path
+    dataset: Path
+    metadata: Path
+    subject_metadata: Path
+
+
+class Results(BaseModel):
+    metrics: Path
+    checkpoints: Path
+    best_model: Path
+    study: Path
+    logs: Path
+    predictions: Path
+
+
+class Data(BaseModel):
+    raw: Raw
+    processed: Processed
+    analytic: Splits
+    results: Results
+
+
+class Filepaths(BaseModel):
+    tables: Path
+    plots: Path
+    data: Data
+
+
 class Features(BaseModel):
     mh_p_cbcl: Dataset
     abcd_p_demo: Dataset
@@ -156,22 +173,6 @@ class Features(BaseModel):
     mri_y_tfmr_sst_csvcg_dsk: Dataset
     mri_y_tfmr_mid_alrvn_dsk: Dataset
     mri_y_tfmr_nback_2b_dsk: Dataset
-
-
-class Index(BaseModel):
-    join_on: list[str]
-    sample_id: str
-    event: str
-    label: str
-    split: str
-
-
-class Experiment(BaseModel):
-    analyses: list[str]
-    analysis: str
-    factor_models: list[str]
-    factor_model: str
-    split_on: str
 
 
 class Config(BaseModel):
