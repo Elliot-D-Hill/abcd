@@ -1,7 +1,7 @@
 import polars as pl
 import polars.selectors as cs
-from nanuk.preprocess import filter_null_rows
-from nanuk.transform import assign_splits
+from nanook.preprocess import filter_null_rows
+from nanook.transform import assign_splits
 from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import FactorAnalysis
 from sklearn.impute import SimpleImputer
@@ -47,9 +47,8 @@ def apply_transformer(df: pl.DataFrame, cfg: Config) -> pl.DataFrame:
 
 def shift_y(df: pl.LazyFrame, cfg: Config) -> pl.LazyFrame:
     shift = pl.col("y_t").shift(-1).over("src_subject_id").alias("y_{t+1}")
-    events = pl.Enum(EVENTS)
     df = (
-        df.sort(cfg.index.sample_id, pl.col(cfg.index.event).cast(events))
+        df.sort(cfg.index.sample_id)
         .with_columns(shift)
         .drop_nulls()
         .select(cfg.index.split, *cfg.index.join_on, "y_t", cfg.index.label)
@@ -58,30 +57,37 @@ def shift_y(df: pl.LazyFrame, cfg: Config) -> pl.LazyFrame:
     return df
 
 
+def train_val_test_split(df: pl.LazyFrame, cfg: Config) -> pl.LazyFrame:
+    over = None
+    splits = {"train": 0.8, "val": 0.1, "test": 0.1}
+    if cfg.experiment.analysis == "time":
+        by = cfg.index.event
+        over = cfg.index.sample_id
+        splits = {"train": 0.5, "val": 0.25, "test": 0.25}
+    elif cfg.experiment.analysis == "site":
+        sites = pl.scan_csv(cfg.filepaths.data.processed.metadata).select(
+            *cfg.index.join_on, cfg.index.site
+        )
+        df = df.join(sites, on=cfg.index.join_on, how="inner")
+        by = cfg.index.site
+    else:
+        by = cfg.index.sample_id
+    df = df.with_columns(pl.col(cfg.index.event).cast(pl.Enum(EVENTS)))
+    df = assign_splits(frame=df, splits=splits, by=by, over=over, name=cfg.index.split)
+    df = df.sort(cfg.index.join_on)
+    df = df.with_columns(pl.col(cfg.index.event).cast(pl.String))
+    return df
+
+
 def make_labels(cfg: Config) -> pl.LazyFrame:
     columns = cfg.index.join_on + cfg.features.mh_p_cbcl.columns
-    sites = pl.scan_csv(cfg.filepaths.data.raw.features / "abcd_y_lt.csv").select(
-        *cfg.index.join_on, cfg.index.site
-    )
     df = (
         pl.scan_csv(cfg.filepaths.data.raw.labels)
         .select(columns)
         .filter(pl.col(cfg.index.event).is_in(EVENTS))
     )
-    df = df.join(sites, on=cfg.index.join_on, how="inner")
-    assignment = assign_splits(
-        splits=cfg.preprocess.splits,
-        group=cfg.experiment.split_on,
-        name=cfg.index.split,
-    )
-    df = df.with_columns(assignment)
-    site_per_split = (
-        df.select(cfg.index.split, cfg.index.site)
-        .group_by(cfg.index.split)
-        .agg(pl.col(cfg.index.site).n_unique().alias("n_sites"))
-    )
-    print(site_per_split.collect())
-    df = filter_null_rows(df=df, columns=cs.by_name(cfg.features.mh_p_cbcl.columns))
+    df = train_val_test_split(df=df, cfg=cfg)
+    df = filter_null_rows(frame=df, columns=cs.by_name(cfg.features.mh_p_cbcl.columns))
     df = apply_transformer(df=df.collect(), cfg=cfg).lazy()
     df = shift_y(df=df, cfg=cfg)
     return df

@@ -1,14 +1,15 @@
 import polars as pl
 import polars.selectors as cs
-from nanuk.preprocess import join_dataframes
+from nanook.frame import join_dataframes
 
 from abcd.config import Config
 from abcd.constants import COLUMNS, EVENTS_TO_NAMES, RACE_MAPPING, SEX_MAPPING
-from abcd.labels import make_labels
 from abcd.process import get_datasets
 
 
-def make_subject_metadata(df: pl.LazyFrame) -> pl.LazyFrame:
+def make_subject_metadata(cfg: Config) -> None:
+    dfs = get_datasets(cfg=cfg, include=["abcd_p_demo", "led_l_adi", "abcd_y_lt"])
+    df = join_dataframes(frames=dfs, on=cfg.index.join_on, how="left")
     sex = pl.col("demo_sex_v2").replace_strict(SEX_MAPPING, default=None)
     race = pl.col("race_ethnicity").replace_strict(RACE_MAPPING, default=None)
     age = pl.col("interview_age").truediv(12).round(0)
@@ -22,7 +23,6 @@ def make_subject_metadata(df: pl.LazyFrame) -> pl.LazyFrame:
     )
     df = (
         df.with_columns(sex, race, age, adi, year)
-        .with_columns(cs.numeric().cast(pl.Int32))
         .with_columns(
             pl.col(
                 "demo_sex_v2",
@@ -32,26 +32,15 @@ def make_subject_metadata(df: pl.LazyFrame) -> pl.LazyFrame:
                 "demo_comb_income_v2",
             )
             .fill_null(strategy="forward")
-            .over("src_subject_id")
+            .over(cfg.index.sample_id)
         )
-        .with_columns(cs.numeric().shrink_dtype())
+        .with_columns(cs.numeric().cast(pl.Int32).shrink_dtype())
+        .with_columns(
+            pl.col(cfg.index.event).replace_strict(EVENTS_TO_NAMES, default=None)
+        )
+        .rename(COLUMNS)
+        .select(COLUMNS.values())
     )
-    return df
-
-
-def make_metadata(cfg: Config) -> None:
-    if not cfg.regenerate:
-        return
-    dfs = get_datasets(cfg=cfg)
-    make_variable_metadata(cfg=cfg, dfs=dfs)
-    df = join_dataframes(dfs=dfs, on=cfg.index.join_on, how="left")
-    df = make_subject_metadata(df=df)
-    labels = make_labels(cfg=cfg)
-    df = labels.join(df, on=cfg.index.join_on, how="left").select(COLUMNS.keys())
-    df.collect().write_parquet(cfg.filepaths.data.processed.metadata)
-    df = df.with_columns(
-        pl.col(cfg.index.event).replace_strict(EVENTS_TO_NAMES, default=None)
-    ).rename(COLUMNS)
     df.collect().write_parquet(cfg.filepaths.data.processed.subject_metadata)
 
 
@@ -123,7 +112,9 @@ def make_variable_df(cfg: Config, columns: list[list[str]]) -> pl.DataFrame:
     return pl.concat(dfs)
 
 
-def make_variable_metadata(cfg: Config, dfs: list[pl.LazyFrame]) -> None:
+def make_variable_metadata(cfg: Config) -> None:
+    include = list(cfg.features.model_dump().keys())
+    dfs = get_datasets(cfg=cfg, include=include)
     columns = [df.collect_schema().names() for df in dfs]
     variables = make_variable_df(cfg=cfg, columns=columns)
     df = pl.read_csv(

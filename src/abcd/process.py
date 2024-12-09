@@ -4,11 +4,13 @@ from glob import glob
 import numpy as np
 import polars as pl
 import polars.selectors as cs
-from nanuk.preprocess import drop_null_columns, filter_null_rows, join_dataframes
-from nanuk.transform import impute, pipeline, standardize
+from nanook.frame import join_dataframes
+from nanook.preprocess import drop_null_columns, filter_null_rows
+from nanook.transform import impute, pipeline, standardize
 
 from abcd.config import Config
 from abcd.constants import EVENTS, EVENTS_TO_VALUES
+from abcd.labels import make_labels
 
 
 def make_demographics(df: pl.LazyFrame) -> pl.LazyFrame:
@@ -45,13 +47,15 @@ def identity(df: pl.LazyFrame) -> pl.LazyFrame:
     return df
 
 
-def get_datasets(cfg: Config) -> list[pl.LazyFrame]:
+def get_datasets(cfg: Config, include: list[str] | None = None) -> list[pl.LazyFrame]:
     transforms = defaultdict(lambda: identity)
     transforms["led_l_adi"] = make_adi
     transforms["abcd_p_demo"] = make_demographics
     dfs = []
     files = cfg.features.model_dump().items()
     for filename, metadata in files:
+        if (include is not None) and (filename not in include):
+            continue
         df = pl.scan_csv(
             source=cfg.filepaths.data.raw.features / f"{filename}.csv",
             null_values=["", "null"],
@@ -126,7 +130,7 @@ def get_features(cfg: Config) -> pl.Expr:
             selection = cs.all()
         case "questions_mri":
             selection = cs.exclude(cfg.features.mh_p_cbcl.columns)
-        case "questions" | "all" | "site":
+        case "questions" | "all" | "site" | "time":
             selection = cs.exclude(cfg.features.mh_p_cbcl.columns + brain_features)
         case "questions_symptoms":
             selection = cs.exclude(brain_features)
@@ -141,8 +145,8 @@ def get_features(cfg: Config) -> pl.Expr:
 
 
 def collect_datasets(cfg: Config) -> pl.LazyFrame:
-    datasets = get_data(cfg=cfg)
-    df = join_dataframes(dfs=datasets, on=cfg.index.join_on, how="left")
+    dfs = get_data(cfg=cfg)
+    df = join_dataframes(frames=dfs, on=cfg.index.join_on, how="left")
     features = get_features(cfg=cfg)
     df = df.select(features).drop_nulls(cfg.index.event)
     return df
@@ -150,9 +154,7 @@ def collect_datasets(cfg: Config) -> pl.LazyFrame:
 
 def transform_dataset(cfg: Config) -> pl.LazyFrame:
     df = collect_datasets(cfg=cfg)
-    label_columns = cs.by_name(cfg.index.split, *cfg.index.join_on, cfg.index.label)
-    metadata = pl.scan_parquet(cfg.filepaths.data.processed.metadata)
-    labels = metadata.select(label_columns)
+    labels = make_labels(cfg=cfg)
     df = labels.join(df, on=cfg.index.join_on, how="inner")
     columns = cs.numeric().exclude(cfg.index.label)
     train = columns.filter(pl.col(cfg.index.split).eq("train"))
@@ -166,22 +168,20 @@ def transform_dataset(cfg: Config) -> pl.LazyFrame:
         .over(cfg.index.sample_id)
         .fill_null(strategy="mean")
     )
-    df = (
-        df.with_columns(
-            pl.col(cfg.index.event).replace_strict(EVENTS_TO_VALUES, default=None),
-        )
-        .select(label_columns, cs.exclude(label_columns))
-        .drop(cs.string() & ~cs.by_name(cfg.index.split, cfg.index.sample_id))
-    )
+    df = df.with_columns(
+        pl.col(cfg.index.event).replace_strict(EVENTS_TO_VALUES, default=None)
+    ).drop(cs.string() & ~cs.by_name(cfg.index.split, cfg.index.sample_id))
+    label_columns = cs.by_name(cfg.index.split, *cfg.index.join_on, cfg.index.label)
+    df = df.select(label_columns, cs.exclude(label_columns))
     return df
 
 
 def make_mri_dataset(cfg: Config, df: pl.DataFrame) -> None:
     by = [cfg.index.split, cfg.index.sample_id]
     for (split, sample), group in df.group_by(by, maintain_order=True):
-        label = group.select(cfg.index.label).to_numpy().astype(np.float32)
+        label = group.drop_in_place(cfg.index.label).to_numpy().astype(np.float32)
         features = (
-            group.drop(cfg.index.split, cfg.index.sample_id, cfg.index.label)
+            group.drop(cfg.index.split, cfg.index.sample_id)
             .to_numpy()
             .astype(np.float32)
         )

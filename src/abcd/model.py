@@ -147,16 +147,16 @@ class Network(LightningModule):
     def forward(self, inputs):
         return self.model(inputs)
 
-    def l1_loss(self):
-        match self.model:
-            case SequenceModel():
-                return self.lambda_l1 * torch.norm(self.model.rnn.weight_ih_l0)
-            case MultiLayerPerceptron():
-                return self.lambda_l1 * torch.norm(self.model.mlp[0].weight)
-            case _:
-                raise ValueError(
-                    f"L1 regularization not implemented for {type(self.model)}"
-                )
+    # def l1_loss(self):
+    #     match self.model:
+    #         case SequenceModel():
+    #             return self.lambda_l1 * torch.norm(self.model.rnn.weight_ih_l0)
+    #         case MultiLayerPerceptron():
+    #             return self.lambda_l1 * torch.norm(self.model.mlp[0].weight)
+    #         case _:
+    #             raise ValueError(
+    #                 f"L1 regularization not implemented for {type(self.model)}"
+    #             )
 
     def step(self, step: str, batch):
         inputs, labels = batch
@@ -164,7 +164,7 @@ class Network(LightningModule):
         labels = labels.flatten()
         outputs, labels = drop_nan(outputs, labels)
         loss = self.criterion(outputs, labels)
-        loss = loss + self.l1_loss()
+        loss = loss  # + self.l1_loss()
         metrics = make_metrics(step, loss, outputs, labels)
         self.log_dict(metrics, prog_bar=True)
         return loss

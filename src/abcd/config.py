@@ -10,7 +10,6 @@ class Experiment(BaseModel):
     analysis: str
     factor_models: list[str]
     factor_model: str
-    split_on: str
 
 
 class Index(BaseModel):
@@ -26,7 +25,6 @@ class Preprocess(BaseModel):
     n_neighbors: int
     null_cutoff: float
     columns_to_drop: list[str]
-    splits: dict[str, float]
 
 
 class Dataloader(BaseModel):
@@ -44,7 +42,6 @@ class Trainer(BaseModel):
 
 class Tuner(BaseModel):
     n_trials: int
-    sampler: str
 
 
 class Logging(BaseModel):
@@ -179,6 +176,7 @@ class Config(BaseModel):
     random_seed: int
     device: str
     fast_dev_run: bool
+    metadata: bool
     regenerate: bool
     tune: bool
     log: bool

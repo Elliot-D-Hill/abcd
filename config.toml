@@ -1,6 +1,7 @@
 random_seed = 42
 device = "mps"
 fast_dev_run = false
+metadata = false
 regenerate = false
 tune = true
 log = false
@@ -23,7 +24,8 @@ site = "site_id_l"
 factor_model = "within_event"
 factor_models = ["within_event"] # , "across_event", "ksads"]
 analyses = [
-    "site",
+    "time",
+    # "site",
     # "mri",
     # "questions",
     # "questions_mri",
@@ -32,8 +34,7 @@ analyses = [
     # "questions_mri_symptoms",
     # "autoregressive",
 ]
-analysis = "site"
-split_on = "site_id_l" # sample_id, site_id
+analysis = "time"
 
 [preprocess]
 n_neighbors = 5
@@ -52,10 +53,6 @@ columns_to_drop = [
     "srpf_",
     "_fc",
 ]
-[preprocess.splits]
-train = 0.8
-val = 0.1
-test = 0.1
 
 [dataloader]
 batch_size = 512
@@ -66,7 +63,6 @@ multiprocessing_context = "fork"
 
 [tuner]
 n_trials = 128
-sampler = "tpe"
 
 [trainer]
 gradient_clip_val = 1.0

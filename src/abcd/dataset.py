@@ -47,7 +47,7 @@ class FileDataset(Dataset):
         filepath = self.files[index]
         data = np.load(filepath)
         features = torch.tensor(data["features"], dtype=torch.float32)
-        labels = torch.tensor(data["label"], dtype=torch.float32).squeeze(1)
+        labels = torch.tensor(data["label"], dtype=torch.float32)
         return features, labels
 
 

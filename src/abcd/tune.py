@@ -8,7 +8,7 @@ from abcd.config import Config
 from abcd.dataset import ABCDDataModule
 from abcd.model import Network, make_trainer
 
-METHODS = {0: "mlp", 1: "rnn", 2: "lstm", 3: "moe"}
+METHODS = {0: "mlp", 1: "rnn", 2: "lstm"}  # 3: "transformer"}
 
 
 def make_params(trial: optuna.Trial, cfg: Config):
@@ -20,7 +20,7 @@ def make_params(trial: optuna.Trial, cfg: Config):
     cfg.model.dropout = trial.suggest_float(**hparams.model.dropout)
     cfg.optimizer.lr = trial.suggest_float(**hparams.optimizer.lr)
     cfg.optimizer.weight_decay = trial.suggest_float(**hparams.optimizer.weight_decay)
-    cfg.optimizer.lambda_l1 = trial.suggest_float(**hparams.optimizer.lambda_l1)
+    # cfg.optimizer.lambda_l1 = trial.suggest_float(**hparams.optimizer.lambda_l1)
     cfg.trainer.max_epochs = trial.suggest_int(**hparams.trainer.max_epochs)
     return cfg
 
@@ -50,7 +50,7 @@ class Objective:
         val_loss = metrics[-1]["val_loss"]
         if val_loss < self.best_val_loss:
             self.best_val_loss = val_loss
-            # trainer.save_checkpoint(path.with_name("best.ckpt"))
+            trainer.save_checkpoint(path.with_name("best.ckpt"))
         return val_loss
 
 

@@ -9,7 +9,7 @@ from abcd.config import Experiment, get_config
 from abcd.dataset import ABCDDataModule
 from abcd.evaluate import evaluate_model
 from abcd.importance import make_shap
-from abcd.metadata import make_metadata
+from abcd.metadata import make_subject_metadata, make_variable_metadata
 from abcd.plots import plot
 from abcd.process import get_dataset
 from abcd.tables import make_tables
@@ -18,7 +18,8 @@ from abcd.tune import tune
 
 def make_experiment(cfg: Experiment):
     analyses = product(cfg.analyses, cfg.factor_models)
-    return tqdm(analyses, total=len(cfg.analyses) * len(cfg.factor_models))
+    total = len(cfg.analyses) * len(cfg.factor_models)
+    return tqdm(analyses, total=total)
 
 
 def main():
@@ -27,7 +28,9 @@ def main():
     cfg = get_config(factor_model="within_event", analysis="metadata")
     seed_everything(cfg.random_seed)
     pl.set_random_seed(cfg.random_seed)
-    make_metadata(cfg=cfg)
+    if cfg.metadata:
+        make_variable_metadata(cfg=cfg)
+        make_subject_metadata(cfg=cfg)
     experiment = make_experiment(cfg=cfg.experiment)
     for analysis, factor_model in experiment:
         if not any([cfg.regenerate, cfg.evaluate, cfg.tune, cfg.importance]):
