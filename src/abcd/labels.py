@@ -1,7 +1,7 @@
 import polars as pl
 import polars.selectors as cs
-from nanuk.preprocess import filter_null_rows
-from nanuk.transform import assign_splits
+from nanook.preprocess import filter_null_rows
+from nanook.transform import assign_splits
 from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import FactorAnalysis
 from sklearn.impute import SimpleImputer
@@ -69,19 +69,19 @@ def make_labels(cfg: Config) -> pl.LazyFrame:
         .filter(pl.col(cfg.index.event).is_in(EVENTS))
     )
     df = df.join(sites, on=cfg.index.join_on, how="inner")
-    assignment = assign_splits(
+    df = assign_splits(
+        frame=df,
         splits=cfg.preprocess.splits,
-        group=cfg.experiment.split_on,
+        by=cfg.experiment.split_on,
         name=cfg.index.split,
     )
-    df = df.with_columns(assignment)
     site_per_split = (
         df.select(cfg.index.split, cfg.index.site)
         .group_by(cfg.index.split)
         .agg(pl.col(cfg.index.site).n_unique().alias("n_sites"))
     )
     print(site_per_split.collect())
-    df = filter_null_rows(df=df, columns=cs.by_name(cfg.features.mh_p_cbcl.columns))
+    df = filter_null_rows(frame=df, columns=cs.by_name(cfg.features.mh_p_cbcl.columns))
     df = apply_transformer(df=df.collect(), cfg=cfg).lazy()
     df = shift_y(df=df, cfg=cfg)
     return df

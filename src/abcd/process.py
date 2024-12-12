@@ -4,8 +4,9 @@ from glob import glob
 import numpy as np
 import polars as pl
 import polars.selectors as cs
-from nanuk.preprocess import drop_null_columns, filter_null_rows, join_dataframes
-from nanuk.transform import impute, pipeline, standardize
+from nanook.frame import join_dataframes
+from nanook.preprocess import drop_null_columns, filter_null_rows
+from nanook.transform import impute, pipeline, standardize
 
 from abcd.config import Config
 from abcd.constants import EVENTS, EVENTS_TO_VALUES
@@ -142,7 +143,7 @@ def get_features(cfg: Config) -> pl.Expr:
 
 def collect_datasets(cfg: Config) -> pl.LazyFrame:
     datasets = get_data(cfg=cfg)
-    df = join_dataframes(dfs=datasets, on=cfg.index.join_on, how="left")
+    df = join_dataframes(frames=datasets, on=cfg.index.join_on, how="left")
     features = get_features(cfg=cfg)
     df = df.select(features).drop_nulls(cfg.index.event)
     return df
