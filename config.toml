@@ -2,11 +2,12 @@ random_seed = 42
 device = "mps"
 fast_dev_run = false
 metadata = false
-regenerate = false
+regenerate = true
 tune = true
+checkpoint = true
 log = false
 predict = false
-evaluate = false
+evaluate = true
 importance = false
 plot = false
 tables = false
@@ -62,7 +63,7 @@ persistent_workers = true
 multiprocessing_context = "fork"
 
 [tuner]
-n_trials = 128
+n_trials = 8
 
 [trainer]
 gradient_clip_val = 1.0
@@ -90,12 +91,12 @@ low = 5
 high = 100
 [hyperparameters.optimizer.lr]
 name = "lr"
-low = 1e-5
-high = 1e-2
+low = 1e-4
+high = 1e-1
 log = true
 [hyperparameters.optimizer.weight_decay]
 name = "weight_decay"
-low = 1e-9
+low = 1e-10
 high = 1e-2
 log = true
 [hyperparameters.optimizer.lambda_l1]
@@ -110,7 +111,7 @@ high = 0.99
 [hyperparameters.model.method]
 name = "method"
 low = 0
-high = 3
+high = 2
 [hyperparameters.model.hidden_dim]
 name = "hidden_dim"
 low = 32
@@ -122,7 +123,7 @@ high = 0.80
 [hyperparameters.model.num_layers]
 name = "num_layers"
 low = 1
-high = 4
+high = 3
 
 [logging]
 checkpoint_every_n_steps = 1
@@ -138,10 +139,8 @@ plots = "data/plots/"
 [filepaths.data.raw]
 labels = "data/raw/features/mh_p_cbcl.csv"
 dataset = "data/raw/dataset.parquet"
-metadata = "data/raw/metadata.parquet"
 features = "data/raw/features"
 mri = "data/raw/imaging"
-splits = "data/raw/splits"
 [filepaths.data.processed]
 labels = "data/processed/labels.parquet"
 features = "data/processed/features.parquet"
@@ -153,6 +152,7 @@ path = "analytic/"
 train = "analytic/train.parquet"
 val = "analytic/val.parquet"
 test = "analytic/test.parquet"
+metadata = "analytic/metadata.parquet"
 [filepaths.data.results]
 metrics = "results/metrics"
 checkpoints = "results/checkpoints"

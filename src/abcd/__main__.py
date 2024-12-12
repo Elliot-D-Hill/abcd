@@ -30,12 +30,12 @@ def main():
     pl.set_random_seed(cfg.random_seed)
     if cfg.metadata:
         make_variable_metadata(cfg=cfg)
-        make_subject_metadata(cfg=cfg)
     experiment = make_experiment(cfg=cfg.experiment)
     for analysis, factor_model in experiment:
         if not any([cfg.regenerate, cfg.evaluate, cfg.tune, cfg.importance]):
             continue
         cfg = get_config(factor_model=factor_model, analysis=analysis)
+        make_subject_metadata(cfg=cfg)
         splits = get_dataset(cfg=cfg)
         data_module = ABCDDataModule(splits=splits, cfg=cfg)
         cfg.model.input_dim = data_module.train[0][0].shape[-1]

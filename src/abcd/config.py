@@ -105,15 +105,14 @@ class Splits(BaseModel):
     train: Path
     val: Path
     test: Path
+    metadata: Path
 
 
 class Raw(BaseModel):
     labels: Path
     dataset: Path
-    metadata: Path
     features: Path
     mri: Path
-    splits: Path
 
 
 class Processed(BaseModel):
@@ -179,6 +178,7 @@ class Config(BaseModel):
     metadata: bool
     regenerate: bool
     tune: bool
+    checkpoint: bool
     log: bool
     predict: bool
     evaluate: bool
@@ -222,8 +222,6 @@ def get_config(factor_model: str, analysis: str | None = None) -> Config:
         cfg = Config(**load(f))
     if analysis is None:
         return cfg
-    elif analysis == "metadata":
-        new_path = Path("data/analyses/metadata")
     else:
         new_path = Path(f"data/analyses/{factor_model}/{analysis}")
     cfg.experiment.analysis = analysis

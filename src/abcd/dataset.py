@@ -16,7 +16,7 @@ def make_tensor_dataset(cfg: Config, dataset: pl.DataFrame):
         cfg.index.sample_id, maintain_order=True, include_key=False
     ):
         labels = df.select(cfg.index.label).to_torch(dtype=pl.Float32)
-        exclude = pl.exclude(cfg.index.split, cfg.index.label)
+        exclude = pl.exclude(cfg.index.split, cfg.index.event, cfg.index.label)
         subject = df.select(exclude)
         features = subject.to_torch(dtype=pl.Float32)
         data.append((features, labels))

@@ -6,11 +6,12 @@ import polars as pl
 import polars.selectors as cs
 from nanook.frame import join_dataframes
 from nanook.preprocess import drop_null_columns, filter_null_rows
-from nanook.transform import impute, pipeline, standardize
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 from abcd.config import Config
-from abcd.constants import EVENTS, EVENTS_TO_VALUES
-from abcd.labels import make_labels
+from abcd.constants import EVENTS
 
 
 def make_demographics(df: pl.LazyFrame) -> pl.LazyFrame:
@@ -70,7 +71,11 @@ def get_datasets(cfg: Config, include: list[str] | None = None) -> list[pl.LazyF
             .filter(pl.col(cfg.index.event).is_in(EVENTS))
             .pipe(filter_null_rows, columns=cs.numeric())
             .pipe(drop_null_columns, cutoff=cfg.preprocess.null_cutoff)
-            .with_columns(cs.numeric().shrink_dtype())
+            .with_columns(
+                cs.numeric().shrink_dtype(),
+                pl.col(cfg.index.event).cast(pl.Enum(EVENTS)),
+            )
+            .sort(cfg.index.join_on)
         )
         dfs.append(df)
     return dfs
@@ -88,7 +93,9 @@ def get_mri_data(cfg: Config) -> list[pl.LazyFrame]:
         )
         df = df.filter(pl.col(cfg.index.event).is_in(EVENTS))
         df = df.pipe(drop_null_columns, cutoff=cfg.preprocess.null_cutoff)
-        df = df.with_columns(cs.numeric().shrink_dtype())
+        df = df.with_columns(
+            cs.numeric().shrink_dtype(), pl.col(cfg.index.event).cast(pl.Enum(EVENTS))
+        )
         dfs.append(df)
     return dfs
 
@@ -148,31 +155,57 @@ def collect_datasets(cfg: Config) -> pl.LazyFrame:
     dfs = get_data(cfg=cfg)
     df = join_dataframes(frames=dfs, on=cfg.index.join_on, how="left")
     features = get_features(cfg=cfg)
-    df = df.select(features).drop_nulls(cfg.index.event)
+    df = df.select(features).drop_nulls(cfg.index.event).sort(*cfg.index.join_on)
     return df
+
+    # columns = cs.numeric().exclude(cfg.index.label)
+    # train = columns.filter(pl.col(cfg.index.split).eq("train"))
+    # scale = standardize(columns, method="zscore", train=train)
+    # df = df.with_columns(
+    #     columns.fill_null(strategy="forward").over(cfg.index.sample_id)
+    # )
+    # df = df.with_columns(
+    #     columns.fill_null(train.mean().over(cfg.index.event)).fill_null(strategy="mean")
+    # )
+    # df = pipeline(df, [scale], over=cfg.index.event)
+    # df = df.with_columns(scale.over(cfg.index.event))
 
 
 def transform_dataset(cfg: Config) -> pl.LazyFrame:
     df = collect_datasets(cfg=cfg)
-    labels = make_labels(cfg=cfg)
-    df = labels.join(df, on=cfg.index.join_on, how="inner")
-    columns = cs.numeric().exclude(cfg.index.label)
-    train = columns.filter(pl.col(cfg.index.split).eq("train"))
-    scale = standardize(columns, method="zscore", train=train)
-    imputation = impute(columns, method="median", train=train)
-    transforms = [scale, imputation]
-    df = pipeline(df, transforms, over=cfg.index.event)
-    df = df.with_columns(
-        pl.all()
-        .fill_null(strategy="forward")
-        .over(cfg.index.sample_id)
-        .fill_null(strategy="mean")
+    metadata = pl.scan_parquet(cfg.filepaths.data.analytic.metadata).with_columns(
+        pl.col(cfg.index.event).cast(pl.Enum(EVENTS))
     )
-    df = df.with_columns(
-        pl.col(cfg.index.event).replace_strict(EVENTS_TO_VALUES, default=None)
-    ).drop(cs.string() & ~cs.by_name(cfg.index.split, cfg.index.sample_id))
+    labels = metadata.select(cfg.index.split, *cfg.index.join_on, cfg.index.label)
+    df = (
+        labels.join(df, on=cfg.index.join_on, how="inner")
+        .with_columns(
+            # pl.col(cfg.index.event)
+            # .replace_strict(EVENTS_TO_VALUES, default=None)
+            # .cast(pl.Int32)
+            # .alias("event"),
+            cs.numeric().fill_null(strategy="forward").over(cfg.index.sample_id),
+        )
+        .sort(*cfg.index.join_on)
+    )
+    dfs = []
+    for event in df.collect().partition_by(
+        cfg.index.event, maintain_order=True, include_key=True
+    ):
+        event = event.select(cfg.index.split, cs.numeric().exclude(cfg.index.label))
+        train = event.filter(pl.col("split") == "train").drop("split")
+        transformer = make_pipeline(SimpleImputer(strategy="mean"), StandardScaler())
+        transformer.fit(train)  # type: ignore
+        transformed = transformer.transform(event.drop("split"))  # type: ignore
+        dfs.append(transformed)
+    features = pl.concat(dfs)
+    df = df.drop(cs.string() & ~cs.by_name(cfg.index.split, cfg.index.sample_id))
     label_columns = cs.by_name(cfg.index.split, *cfg.index.join_on, cfg.index.label)
-    df = df.select(label_columns, cs.exclude(label_columns))
+    df = (
+        df.with_columns(features)
+        .select(label_columns, cs.exclude(label_columns))
+        .sort(*cfg.index.join_on)
+    )
     return df
 
 
@@ -193,6 +226,16 @@ def make_dataset(cfg: Config) -> None:
     df = transform_dataset(cfg=cfg).collect()
     if cfg.experiment.analysis == "mri":
         make_mri_dataset(cfg=cfg, df=df)
+    if cfg.experiment.analysis == "time":
+        df.filter(pl.col(cfg.index.split).eq("train")).write_parquet(
+            cfg.filepaths.data.analytic.train
+        )
+        df.filter(pl.col(cfg.index.split).is_in(["train", "val"])).write_parquet(
+            cfg.filepaths.data.analytic.val
+        )
+        df.filter(
+            pl.col(cfg.index.split).is_in(["train", "val", "test"])
+        ).write_parquet(cfg.filepaths.data.analytic.test)
     else:
         for split, group in df.group_by(cfg.index.split):
             group.write_parquet(

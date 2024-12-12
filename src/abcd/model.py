@@ -164,7 +164,7 @@ class Network(LightningModule):
         labels = labels.flatten()
         outputs, labels = drop_nan(outputs, labels)
         loss = self.criterion(outputs, labels)
-        loss = loss  # + self.l1_loss()
+        # loss = loss  # + self.l1_loss()
         metrics = make_metrics(step, loss, outputs, labels)
         self.log_dict(metrics, prog_bar=True)
         return loss
@@ -230,7 +230,7 @@ def make_architecture(cfg: Model):
             return sequence_model(method=nn.LSTM)
         case "transformer":
             return Transformer(
-                num_heads=4, max_seq_len=2, **hparams
+                num_heads=4, max_seq_len=4, **hparams
             )  # FIXME: max_seq_len
         case "mlp":
             return MultiLayerPerceptron(**hparams)

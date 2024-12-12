@@ -13,9 +13,12 @@ from torchmetrics.functional import precision_recall_curve, roc
 from torchmetrics.wrappers import BootStrapper
 
 from abcd.config import Config
+from abcd.constants import COLUMNS
 from abcd.dataset import ABCDDataModule
 from abcd.model import Network, make_trainer
 from abcd.tune import get_model
+
+# df.with_columns(pl.col(cfg.index.event).replace_strict(EVENTS_TO_NAMES, default=None))
 
 
 def make_predictions(cfg: Config, model: Network, data_module: ABCDDataModule):
@@ -24,7 +27,7 @@ def make_predictions(cfg: Config, model: Network, data_module: ABCDDataModule):
     outputs, labels = zip(*predictions)
     outputs = torch.concat(outputs).cpu()
     labels = torch.concat(labels).cpu()
-    metadata = pl.read_csv(cfg.filepaths.data.raw.metadata)
+    metadata = pl.read_parquet(cfg.filepaths.data.analytic.metadata).rename(COLUMNS)
     test_metadata = metadata.filter(pl.col("Split").eq("test"))
     df = pl.DataFrame({"output": outputs.cpu().numpy(), "label": labels.cpu().numpy()})
     return pl.concat([test_metadata, df], how="horizontal")
@@ -168,6 +171,8 @@ def evaluate_model(cfg: Config, data_module: ABCDDataModule):
         df.write_parquet(cfg.filepaths.data.results.predictions)
     else:
         df = pl.read_parquet(cfg.filepaths.data.results.predictions)
+    if cfg.experiment.analysis == "time":
+        df = df.filter(pl.col("Follow-up event").eq("3-Year"))
     df = df.with_columns(
         pl.when(pl.col("Quartile at t").eq(4))
         .then(pl.lit("Persistence"))

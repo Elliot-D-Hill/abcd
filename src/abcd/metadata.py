@@ -1,9 +1,9 @@
 import polars as pl
-import polars.selectors as cs
 from nanook.frame import join_dataframes
 
 from abcd.config import Config
-from abcd.constants import COLUMNS, EVENTS_TO_NAMES, RACE_MAPPING, SEX_MAPPING
+from abcd.constants import COLUMNS, EVENTS, RACE_MAPPING, SEX_MAPPING
+from abcd.labels import make_labels
 from abcd.process import get_datasets
 
 
@@ -34,14 +34,17 @@ def make_subject_metadata(cfg: Config) -> None:
             .fill_null(strategy="forward")
             .over(cfg.index.sample_id)
         )
-        .with_columns(cs.numeric().cast(pl.Int32).shrink_dtype())
-        .with_columns(
-            pl.col(cfg.index.event).replace_strict(EVENTS_TO_NAMES, default=None)
-        )
-        .rename(COLUMNS)
-        .select(COLUMNS.values())
+        .with_columns(pl.col(cfg.index.event).cast(pl.Enum(EVENTS)))
     )
-    df.collect().write_parquet(cfg.filepaths.data.processed.subject_metadata)
+    labels = make_labels(cfg=cfg).with_columns(
+        pl.col(cfg.index.event).cast(pl.Enum(EVENTS))
+    )
+    df = (
+        labels.join(df, on=cfg.index.join_on, how="left")
+        .select(COLUMNS.keys())
+        .sort(*cfg.index.join_on)
+    )
+    df.collect().write_parquet(cfg.filepaths.data.analytic.metadata)
 
 
 def rename_questions() -> pl.Expr:
@@ -67,7 +70,7 @@ def rename_questions() -> pl.Expr:
 
 def rename_datasets() -> pl.Expr:
     return (
-        pl.when(pl.col("variable").str.contains("eventname|site_id"))
+        pl.when(pl.col("variable").str.contains("eventname"))
         .then(pl.lit("Follow-up event"))
         .when(pl.col("variable").str.contains("demo_sex_v2_|interview_age"))
         .then(pl.lit("Age and sex"))

@@ -5,15 +5,17 @@ EVENTS = [
     "1_year_follow_up_y_arm_1",
     "2_year_follow_up_y_arm_1",
     "3_year_follow_up_y_arm_1",
+    "4_year_follow_up_y_arm_1",
 ]
 EVENTS_TO_VALUES = dict(zip(EVENTS, range(len(EVENTS))))
 RACE_MAPPING = {1: "White", 2: "Black", 3: "Hispanic", 4: "Asian", 5: "Other"}
 SEX_MAPPING = {0: "Female", 1: "Male"}
 COLUMNS = {
+    "split": "Split",
     "src_subject_id": "Subject ID",
     "eventname": "Follow-up event",
-    # "y_t": "Quartile at t",
-    # "y_{t+1}": "Quartile at t+1",
+    "y_t": "Quartile at t",
+    "y_{t+1}": "Quartile at t+1",
     "demo_sex_v2": "Sex",
     "race_ethnicity": "Race",
     "interview_age": "Age",

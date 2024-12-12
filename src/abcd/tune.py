@@ -41,14 +41,14 @@ class Objective:
     def __call__(self, trial: optuna.Trial):
         cfg = make_params(trial, cfg=self.cfg)
         model = get_model(cfg=cfg)
-        trainer = make_trainer(cfg=cfg, checkpoint=True)
+        trainer = make_trainer(cfg=cfg, checkpoint=cfg.checkpoint)
         path = Path(cfg.filepaths.data.results.checkpoints / "last.ckpt")
         if path.exists():
             path.unlink()
         trainer.fit(model, datamodule=self.data_module)
         metrics = trainer.validate(model, datamodule=self.data_module, ckpt_path="last")
         val_loss = metrics[-1]["val_loss"]
-        if val_loss < self.best_val_loss:
+        if (val_loss < self.best_val_loss) and cfg.checkpoint:
             self.best_val_loss = val_loss
             trainer.save_checkpoint(path.with_name("best.ckpt"))
         return val_loss
@@ -67,3 +67,6 @@ def tune(cfg: Config, data_module):
     study.optimize(func=objective, n_trials=half_trials)
     df = pl.DataFrame(study.trials_dataframe())
     df.write_parquet("data/study.parquet")
+    # trainer = make_trainer(cfg=cfg, checkpoint=False)
+    # model = get_model(cfg=cfg, best=True)
+    # trainer.test(model=model, datamodule=data_module)
