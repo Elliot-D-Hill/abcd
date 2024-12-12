@@ -8,7 +8,7 @@ from abcd.config import Config
 from abcd.dataset import ABCDDataModule
 from abcd.model import Network, make_trainer
 
-METHODS = {0: "mlp", 1: "rnn", 2: "lstm", 3: "moe"}
+METHODS = {0: "mlp", 1: "rnn", 2: "lstm"}
 
 
 def make_params(trial: optuna.Trial, cfg: Config):

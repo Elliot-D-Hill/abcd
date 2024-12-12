@@ -75,12 +75,6 @@ def make_labels(cfg: Config) -> pl.LazyFrame:
         by=cfg.experiment.split_on,
         name=cfg.index.split,
     )
-    site_per_split = (
-        df.select(cfg.index.split, cfg.index.site)
-        .group_by(cfg.index.split)
-        .agg(pl.col(cfg.index.site).n_unique().alias("n_sites"))
-    )
-    print(site_per_split.collect())
     df = filter_null_rows(frame=df, columns=cs.by_name(cfg.features.mh_p_cbcl.columns))
     df = apply_transformer(df=df.collect(), cfg=cfg).lazy()
     df = shift_y(df=df, cfg=cfg)

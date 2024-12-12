@@ -1,7 +1,7 @@
 random_seed = 42
 device = "mps"
 fast_dev_run = false
-regenerate = false
+regenerate = true
 tune = true
 log = false
 predict = false
@@ -18,22 +18,24 @@ event = "eventname"
 label = "y_{t+1}"
 split = "split"
 site = "site_id_l"
+propensity = "acs_raked_propensity_score"
 
 [experiment]
 factor_model = "within_event"
 factor_models = ["within_event"] # , "across_event", "ksads"]
 analyses = [
-    "site",
+    # "site",
     # "mri",
-    # "questions",
+    "questions",
     # "questions_mri",
     # "questions_symptoms",
     # "symptoms",
     # "questions_mri_symptoms",
     # "autoregressive",
 ]
-analysis = "site"
-split_on = "site_id_l" # sample_id, site_id
+analysis = "questions"
+split_on = "src_subject_id" # sample_id, site_id
+propensity = true
 
 [preprocess]
 n_neighbors = 5
@@ -90,16 +92,16 @@ output_dim = 4
 [hyperparameters]
 [hyperparameters.trainer.max_epochs]
 name = "max_epochs"
-low = 5
+low = 10
 high = 100
 [hyperparameters.optimizer.lr]
 name = "lr"
-low = 1e-5
+low = 1e-4
 high = 1e-2
 log = true
 [hyperparameters.optimizer.weight_decay]
 name = "weight_decay"
-low = 1e-9
+low = 1e-10
 high = 1e-2
 log = true
 [hyperparameters.optimizer.lambda_l1]
@@ -114,7 +116,7 @@ high = 0.99
 [hyperparameters.model.method]
 name = "method"
 low = 0
-high = 3
+high = 2
 [hyperparameters.model.hidden_dim]
 name = "hidden_dim"
 low = 32
@@ -126,7 +128,7 @@ high = 0.80
 [hyperparameters.model.num_layers]
 name = "num_layers"
 low = 1
-high = 4
+high = 3
 
 [logging]
 checkpoint_every_n_steps = 1
@@ -188,6 +190,7 @@ columns = [
     "demo_comb_income_v2",
     "demo_prnt_ed_v2",
     "demo_prtnr_ed_v2",
+    "acs_raked_propensity_score",
 ]
 [features.led_l_adi]
 name = "Area deprivation"

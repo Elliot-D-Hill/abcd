@@ -16,10 +16,14 @@ def make_tensor_dataset(cfg: Config, dataset: pl.DataFrame):
         cfg.index.sample_id, maintain_order=True, include_key=False
     ):
         labels = df.select(cfg.index.label).to_torch(dtype=pl.Float32)
-        exclude = pl.exclude(cfg.index.split, cfg.index.label)
+        exclude = pl.exclude(
+            cfg.index.split, cfg.index.label, "acs_raked_propensity_score"
+        )
         subject = df.select(exclude)
         features = subject.to_torch(dtype=pl.Float32)
-        data.append((features, labels))
+        propensity = df.select("acs_raked_propensity_score").to_torch(dtype=pl.Float32)
+        sample = (features, labels, propensity)
+        data.append(sample)
     return data
 
 
@@ -30,9 +34,9 @@ class TimeSeriesDataset(Dataset):
     def __len__(self):
         return len(self.dataset)
 
-    def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
-        features, labels = self.dataset[index]
-        return features, labels
+    def __getitem__(self, index) -> tuple[torch.Tensor, ...]:
+        features, labels, propensity = self.dataset[index]
+        return features, labels, propensity
 
 
 class FileDataset(Dataset):
@@ -52,10 +56,13 @@ class FileDataset(Dataset):
 
 
 def collate_fn(batch):
-    features, labels = zip(*batch)
+    features, labels, propensity = zip(*batch)
     padded_features = pad_sequence(features, batch_first=True, padding_value=0)
     padded_labels = pad_sequence(labels, batch_first=True, padding_value=float("nan"))
-    return padded_features, padded_labels.squeeze(-1)
+    padded_propensity = pad_sequence(
+        propensity, batch_first=True, padding_value=float("nan")
+    )
+    return padded_features, padded_labels.squeeze(-1), padded_propensity.squeeze(-1)
 
 
 def init_datasets(splits: dict[str, pl.DataFrame | list[str]], cfg: Config):

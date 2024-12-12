@@ -78,7 +78,7 @@ def rename_questions() -> pl.Expr:
 
 def rename_datasets() -> pl.Expr:
     return (
-        pl.when(pl.col("variable").str.contains("eventname|site_id"))
+        pl.when(pl.col("variable").str.contains("eventname"))
         .then(pl.lit("Follow-up event"))
         .when(pl.col("variable").str.contains("demo_sex_v2_|interview_age"))
         .then(pl.lit("Age and sex"))

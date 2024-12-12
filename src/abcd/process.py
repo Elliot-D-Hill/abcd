@@ -155,7 +155,7 @@ def transform_dataset(cfg: Config) -> pl.LazyFrame:
     metadata = pl.scan_parquet(cfg.filepaths.data.processed.metadata)
     labels = metadata.select(label_columns)
     df = labels.join(df, on=cfg.index.join_on, how="inner")
-    columns = cs.numeric().exclude(cfg.index.label)
+    columns = cs.numeric().exclude(cfg.index.label, "acs_raked_propensity_score")
     train = columns.filter(pl.col(cfg.index.split).eq("train"))
     scale = standardize(columns, method="zscore", train=train)
     imputation = impute(columns, method="median", train=train)

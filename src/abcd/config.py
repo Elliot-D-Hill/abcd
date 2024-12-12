@@ -11,6 +11,7 @@ class Experiment(BaseModel):
     factor_models: list[str]
     factor_model: str
     split_on: str
+    propensity: bool
 
 
 class Index(BaseModel):

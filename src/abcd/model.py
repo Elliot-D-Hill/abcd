@@ -127,9 +127,12 @@ def make_metrics(step, loss, outputs, labels) -> dict:
     return metrics
 
 
-def drop_nan(outputs, labels):
-    is_not_nan = ~torch.isnan(labels)
-    return outputs[is_not_nan], labels[is_not_nan]
+def drop_nan(outputs, labels, propensity):
+    is_not_nan = ~torch.isnan(labels).flatten()
+    outputs = outputs.flatten(0, 1)[is_not_nan]
+    labels = labels.flatten()[is_not_nan]
+    propensity = propensity.flatten()[is_not_nan]
+    return outputs, labels, propensity
 
 
 class Network(LightningModule):
@@ -137,12 +140,13 @@ class Network(LightningModule):
         super().__init__()
         self.save_hyperparameters(logger=False)
         self.model = make_architecture(cfg=cfg.model)
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss(reduction="none")
         self.optimizer = SGD(
             self.model.parameters(), **cfg.optimizer.model_dump(exclude={"lambda_l1"})
         )
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
         self.lambda_l1 = cfg.optimizer.lambda_l1
+        self.propensity = cfg.experiment.propensity
 
     def forward(self, inputs):
         return self.model(inputs)
@@ -159,12 +163,17 @@ class Network(LightningModule):
                 )
 
     def step(self, step: str, batch):
-        inputs, labels = batch
-        outputs = self(inputs).flatten(0, 1)
-        labels = labels.flatten()
-        outputs, labels = drop_nan(outputs, labels)
+        inputs, labels, propensity = batch
+        outputs = self(inputs)
+        outputs, labels, propensity = drop_nan(outputs, labels, propensity)
         loss = self.criterion(outputs, labels)
-        loss = loss + self.l1_loss()
+        if self.propensity:
+            # propensity = torch.softmax(propensity, dim=-1)
+            loss = loss * (1 / (propensity + 1e-8))
+        # is_not_nan =
+        # loss = loss[is_not_nan]
+        loss = loss.mean()
+        # loss = loss + self.l1_loss()
         metrics = make_metrics(step, loss, outputs, labels)
         self.log_dict(metrics, prog_bar=True)
         return loss
@@ -179,9 +188,9 @@ class Network(LightningModule):
         self.step("test", batch)
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        inputs, labels = batch
+        inputs, labels, _ = batch
         outputs = self(inputs)
-        outputs, labels = drop_nan(outputs, labels)
+        outputs, labels, _ = drop_nan(outputs, labels, _)
         return outputs, labels
 
     def configure_optimizers(self):
