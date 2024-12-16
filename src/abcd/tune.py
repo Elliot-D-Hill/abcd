@@ -50,11 +50,11 @@ class Objective:
         val_loss = metrics[-1]["val_loss"]
         if val_loss < self.best_val_loss:
             self.best_val_loss = val_loss
-            # trainer.save_checkpoint(path.with_name("best.ckpt"))
+            trainer.save_checkpoint(path.with_name("best.ckpt"))
         return val_loss
 
 
-def tune(cfg: Config, data_module):
+def tune_model(cfg: Config, data_module):
     sampler = QMCSampler(seed=cfg.random_seed)
     study = optuna.create_study(
         sampler=sampler, direction="minimize", study_name="ABCD"

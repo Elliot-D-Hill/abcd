@@ -146,7 +146,7 @@ class Network(LightningModule):
         )
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
         self.lambda_l1 = cfg.optimizer.lambda_l1
-        self.propensity = cfg.experiment.propensity
+        self.propensity = cfg.experiment.analysis == "propensity"
 
     def forward(self, inputs):
         return self.model(inputs)
@@ -168,12 +168,9 @@ class Network(LightningModule):
         outputs, labels, propensity = drop_nan(outputs, labels, propensity)
         loss = self.criterion(outputs, labels)
         if self.propensity:
-            # propensity = torch.softmax(propensity, dim=-1)
-            loss = loss * (1 / (propensity + 1e-8))
-        # is_not_nan =
-        # loss = loss[is_not_nan]
+            weight = 1 / (propensity + 1e-8)
+            loss = loss * weight
         loss = loss.mean()
-        # loss = loss + self.l1_loss()
         metrics = make_metrics(step, loss, outputs, labels)
         self.log_dict(metrics, prog_bar=True)
         return loss

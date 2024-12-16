@@ -11,7 +11,6 @@ class Experiment(BaseModel):
     factor_models: list[str]
     factor_model: str
     split_on: str
-    propensity: bool
 
 
 class Index(BaseModel):
@@ -135,6 +134,9 @@ class Results(BaseModel):
     study: Path
     logs: Path
     predictions: Path
+    shap_values: Path
+    shap_coef: Path
+    group_shap_coef: Path
 
 
 class Data(BaseModel):
@@ -207,21 +209,21 @@ class Config(BaseModel):
 def update_paths(new_path: Path, cfg: Config) -> Config:
     analytic = deepcopy(cfg.filepaths.data.analytic.model_dump())
     for name, path in analytic.items():
-        new_filepath = new_path / path
+        new_filepath = new_path / "analytic" / path
         new_filepath.parent.mkdir(parents=True, exist_ok=True)
         analytic[name] = new_filepath
     cfg.filepaths.data.analytic = Splits(**analytic)
     results = deepcopy(cfg.filepaths.data.results.model_dump())
     for name, path in results.items():
-        new_filepath = new_path / path
+        new_filepath = new_path / "results" / path
         new_filepath.parent.mkdir(parents=True, exist_ok=True)
         results[name] = new_filepath
     cfg.filepaths.data.results = Results(**results)
     return cfg
 
 
-def get_config(factor_model: str, analysis: str | None = None) -> Config:
-    with open("config.toml", "rb") as f:
+def get_config(path: str, factor_model: str, analysis: str | None = None) -> Config:
+    with open(path, "rb") as f:
         cfg = Config(**load(f))
     if analysis is None:
         return cfg

@@ -127,7 +127,7 @@ def get_features(cfg: Config) -> pl.Expr:
             selection = cs.all()
         case "questions_mri":
             selection = cs.exclude(cfg.features.mh_p_cbcl.columns)
-        case "questions" | "all" | "site":
+        case "questions" | "all" | "site" | "propensity":
             selection = cs.exclude(cfg.features.mh_p_cbcl.columns + brain_features)
         case "questions_symptoms":
             selection = cs.exclude(brain_features)

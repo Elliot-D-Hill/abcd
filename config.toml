@@ -1,12 +1,12 @@
 random_seed = 42
 device = "mps"
 fast_dev_run = false
-regenerate = true
-tune = true
+regenerate = false
+tune = false
 log = false
 predict = false
 evaluate = false
-importance = false
+importance = true
 plot = false
 tables = false
 verbose = false
@@ -24,6 +24,7 @@ propensity = "acs_raked_propensity_score"
 factor_model = "within_event"
 factor_models = ["within_event"] # , "across_event", "ksads"]
 analyses = [
+    # "propensity",
     # "site",
     # "mri",
     "questions",
@@ -35,7 +36,6 @@ analyses = [
 ]
 analysis = "questions"
 split_on = "src_subject_id" # sample_id, site_id
-propensity = true
 
 [preprocess]
 n_neighbors = 5
@@ -67,7 +67,7 @@ persistent_workers = true
 multiprocessing_context = "fork"
 
 [tuner]
-n_trials = 128
+n_trials = 8
 sampler = "tpe"
 
 [trainer]
@@ -155,17 +155,20 @@ dataset = "data/processed/dataset.parquet"
 metadata = "data/processed/metadata.parquet"
 subject_metadata = "data/processed/subject_metadata.parquet"
 [filepaths.data.analytic]
-path = "analytic/"
-train = "analytic/train.parquet"
-val = "analytic/val.parquet"
-test = "analytic/test.parquet"
+path = ""
+train = "train.parquet"
+val = "val.parquet"
+test = "test.parquet"
 [filepaths.data.results]
-metrics = "results/metrics"
-checkpoints = "results/checkpoints"
-best_model = "results/checkpoints/best.ckpt"
-study = "results/study.pkl"
-logs = "results/lightning_logs"
-predictions = "results/predictions.parquet"
+metrics = "metrics/"
+checkpoints = "checkpoints/"
+best_model = "checkpoints/best.ckpt"
+study = "study.pkl"
+logs = "lightning_logs/"
+predictions = "predictions.parquet"
+shap_values = "shap_values.parquet"
+shap_coef = "shap_coef.parquet"
+group_shap_coef = "group_shap_coef.parquet"
 
 [features]
 [features.mh_p_cbcl]
