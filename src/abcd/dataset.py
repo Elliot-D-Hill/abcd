@@ -12,22 +12,36 @@ from abcd.config import Config
 
 def make_tensor_dataset(cfg: Config, dataset: pl.DataFrame):
     data = []
+    propensity_name = "acs_raked_propensity_score"
     for df in dataset.partition_by(
         cfg.index.sample_id, maintain_order=True, include_key=False
     ):
         labels = df.select(cfg.index.label).to_torch(dtype=pl.Float32)
-        exclude = pl.exclude(
-            cfg.index.split, cfg.index.label, "acs_raked_propensity_score"
-        )
+        exclude = pl.exclude(cfg.index.split, cfg.index.label, propensity_name)
         subject = df.select(exclude)
         features = subject.to_torch(dtype=pl.Float32)
-        propensity = df.select("acs_raked_propensity_score").to_torch(dtype=pl.Float32)
-        sample = (features, labels, propensity)
-        data.append(sample)
+
+        sample = [features, labels]
+        if cfg.experiment.analysis == "propensity":
+            propensity = df.select(propensity_name).to_torch(dtype=pl.Float32)
+            sample.append(propensity)
+        data.append(tuple(sample))
     return data
 
 
 class TimeSeriesDataset(Dataset):
+    def __init__(self, cfg: Config, data: pl.DataFrame) -> None:
+        self.dataset = make_tensor_dataset(cfg=cfg, dataset=data)
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, index) -> tuple[torch.Tensor, ...]:
+        features, labels = self.dataset[index]
+        return features, labels
+
+
+class PropensityDataset(Dataset):
     def __init__(self, cfg: Config, data: pl.DataFrame) -> None:
         self.dataset = make_tensor_dataset(cfg=cfg, dataset=data)
 
@@ -56,11 +70,18 @@ class FileDataset(Dataset):
 
 
 def collate_fn(batch):
+    features, labels = zip(*batch)
+    padded_features = pad_sequence(features, batch_first=True, padding_value=0)
+    padded_labels = pad_sequence(labels, batch_first=True, padding_value=torch.nan)
+    return padded_features, padded_labels.squeeze(-1)
+
+
+def propensity_collate_fn(batch):
     features, labels, propensity = zip(*batch)
     padded_features = pad_sequence(features, batch_first=True, padding_value=0)
-    padded_labels = pad_sequence(labels, batch_first=True, padding_value=float("nan"))
+    padded_labels = pad_sequence(labels, batch_first=True, padding_value=torch.nan)
     padded_propensity = pad_sequence(
-        propensity, batch_first=True, padding_value=float("nan")
+        propensity, batch_first=True, padding_value=torch.nan
     )
     return padded_features, padded_labels.squeeze(-1), padded_propensity.squeeze(-1)
 
@@ -72,9 +93,14 @@ def init_datasets(splits: dict[str, pl.DataFrame | list[str]], cfg: Config):
             val = FileDataset(cfg=cfg, data=splits["val"])
             test = FileDataset(cfg=cfg, data=splits["test"])
         case pl.DataFrame(), pl.DataFrame(), pl.DataFrame():
-            train = TimeSeriesDataset(cfg=cfg, data=splits["train"])
-            val = TimeSeriesDataset(cfg=cfg, data=splits["val"])
-            test = TimeSeriesDataset(cfg=cfg, data=splits["test"])
+            if cfg.experiment.analysis == "propensity":
+                train = PropensityDataset(cfg=cfg, data=splits["train"])
+                val = PropensityDataset(cfg=cfg, data=splits["val"])
+                test = PropensityDataset(cfg=cfg, data=splits["test"])
+            else:
+                train = TimeSeriesDataset(cfg=cfg, data=splits["train"])
+                val = TimeSeriesDataset(cfg=cfg, data=splits["val"])
+                test = TimeSeriesDataset(cfg=cfg, data=splits["test"])
     return train, val, test
 
 
@@ -88,7 +114,11 @@ class ABCDDataModule(LightningDataModule):
         self.val = val
         self.test = test
         self.loader = partial(
-            DataLoader, **cfg.dataloader.model_dump(), collate_fn=collate_fn
+            DataLoader,
+            **cfg.dataloader.dict(),
+            collate_fn=propensity_collate_fn
+            if cfg.experiment.analysis == "propensity"
+            else collate_fn,
         )
 
     def train_dataloader(self):

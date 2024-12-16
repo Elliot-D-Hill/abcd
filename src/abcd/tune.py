@@ -2,6 +2,8 @@ from pathlib import Path
 
 import optuna
 import polars as pl
+import torch
+from lightning import LightningModule
 from optuna.samplers import QMCSampler, TPESampler
 
 from abcd.config import Config
@@ -20,7 +22,6 @@ def make_params(trial: optuna.Trial, cfg: Config):
     cfg.model.dropout = trial.suggest_float(**hparams.model.dropout)
     cfg.optimizer.lr = trial.suggest_float(**hparams.optimizer.lr)
     cfg.optimizer.weight_decay = trial.suggest_float(**hparams.optimizer.weight_decay)
-    cfg.optimizer.lambda_l1 = trial.suggest_float(**hparams.optimizer.lambda_l1)
     cfg.trainer.max_epochs = trial.suggest_int(**hparams.trainer.max_epochs)
     return cfg
 
@@ -45,6 +46,7 @@ class Objective:
         path = Path(cfg.filepaths.data.results.checkpoints / "last.ckpt")
         if path.exists():
             path.unlink()
+        model: LightningModule = torch.compile(model, fullgraph=True)  # type: ignore
         trainer.fit(model, datamodule=self.data_module)
         metrics = trainer.validate(model, datamodule=self.data_module, ckpt_path="last")
         val_loss = metrics[-1]["val_loss"]

@@ -1,6 +1,7 @@
 from itertools import product
 
 import polars as pl
+import torch
 from lightning import seed_everything
 from sklearn import set_config
 from tqdm import tqdm
@@ -28,6 +29,7 @@ def main():
         path="config.toml", factor_model="within_event", analysis="metadata"
     )
     seed_everything(cfg.random_seed)
+    torch.set_float32_matmul_precision("medium")
     pl.set_random_seed(cfg.random_seed)
     make_metadata(cfg=cfg)
     experiment = make_experiment(cfg=cfg.experiment)

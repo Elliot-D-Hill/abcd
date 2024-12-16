@@ -51,7 +51,7 @@ def get_datasets(cfg: Config) -> list[pl.LazyFrame]:
     transforms["led_l_adi"] = make_adi
     transforms["abcd_p_demo"] = make_demographics
     dfs = []
-    files = cfg.features.model_dump().items()
+    files = cfg.features.dict().items()
     for filename, metadata in files:
         df = pl.scan_csv(
             source=cfg.filepaths.data.raw.features / f"{filename}.csv",
@@ -73,7 +73,7 @@ def get_datasets(cfg: Config) -> list[pl.LazyFrame]:
     return dfs
 
 
-def get_mri_data(cfg: Config) -> list[pl.LazyFrame]:
+def get_mri_datasets(cfg: Config) -> list[pl.LazyFrame]:
     files = cfg.filepaths.data.raw.mri.glob("*.csv")
     dfs = []
     for filepath in files:
@@ -92,10 +92,10 @@ def get_mri_data(cfg: Config) -> list[pl.LazyFrame]:
 
 def get_data(cfg: Config) -> list[pl.LazyFrame]:
     if cfg.experiment.analysis == "mri":
-        data = get_mri_data(cfg)
-    elif cfg.experiment.analysis == "all":
+        data = get_mri_datasets(cfg)
+    elif cfg.experiment.analysis == "questions_mri_all":
         social = get_datasets(cfg)
-        mri = get_mri_data(cfg)
+        mri = get_mri_datasets(cfg)
         data = social + mri
     else:
         data = get_datasets(cfg)
@@ -112,7 +112,7 @@ def get_brain_features(cfg: Config):
     }
     return [
         column
-        for name, features in cfg.features.model_dump().items()
+        for name, features in cfg.features.dict().items()
         for column in features["columns"]
         if name in brain_datasets
     ]
@@ -127,7 +127,7 @@ def get_features(cfg: Config) -> pl.Expr:
             selection = cs.all()
         case "questions_mri":
             selection = cs.exclude(cfg.features.mh_p_cbcl.columns)
-        case "questions" | "all" | "site" | "propensity":
+        case "questions" | "questions_mri_all" | "site" | "propensity":
             selection = cs.exclude(cfg.features.mh_p_cbcl.columns + brain_features)
         case "questions_symptoms":
             selection = cs.exclude(brain_features)
@@ -192,7 +192,7 @@ def make_mri_dataset(cfg: Config, df: pl.DataFrame) -> None:
 
 def make_dataset(cfg: Config) -> None:
     df = transform_dataset(cfg=cfg).collect()
-    if cfg.experiment.analysis == "mri":
+    if cfg.experiment.analysis in {"mri", "questions_mri_all"}:
         make_mri_dataset(cfg=cfg, df=df)
     else:
         for split, group in df.group_by(cfg.index.split):
@@ -204,7 +204,7 @@ def make_dataset(cfg: Config) -> None:
 def get_dataset(cfg: Config) -> dict[str, pl.DataFrame | list[str]]:
     if cfg.regenerate:
         make_dataset(cfg=cfg)
-    if cfg.experiment.analysis == "mri":
+    if cfg.experiment.analysis in {"mri", "questions_mri_all"}:
         train = glob(str(cfg.filepaths.data.analytic.path / "train/*.npz"))
         val = glob(str(cfg.filepaths.data.analytic.path / "val/*.npz"))
         test = glob(str(cfg.filepaths.data.analytic.path / "test/*.npz"))

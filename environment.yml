@@ -1,0 +1,26 @@
+name: venv
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python>=3.12
+  - lightning
+  - pytorch
+  - pytorch-cuda=12.4
+  - torchvision
+  - torchmetrics
+  - tensorboard
+  - pydantic
+  - polars
+  - pandas
+  - numpy
+  - optuna
+  - ruff
+  - tqdm
+  - rich
+  - seaborn
+  - matplotlib
+  - scikit-learn
+  - pip:
+    - git+https://github.com/Elliot-D-Hill/nanook.git

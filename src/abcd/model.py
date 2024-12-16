@@ -127,67 +127,69 @@ def make_metrics(step, loss, outputs, labels) -> dict:
     return metrics
 
 
-def drop_nan(outputs, labels, propensity):
-    is_not_nan = ~torch.isnan(labels).flatten()
-    outputs = outputs.flatten(0, 1)[is_not_nan]
-    labels = labels.flatten()[is_not_nan]
-    propensity = propensity.flatten()[is_not_nan]
-    return outputs, labels, propensity
-
-
 class Network(LightningModule):
     def __init__(self, cfg: Config):
         super().__init__()
         self.save_hyperparameters(logger=False)
         self.model = make_architecture(cfg=cfg.model)
-        self.criterion = nn.CrossEntropyLoss(reduction="none")
-        self.optimizer = SGD(
-            self.model.parameters(), **cfg.optimizer.model_dump(exclude={"lambda_l1"})
-        )
+        reduction = "none" if cfg.experiment.analysis == "propensity" else "mean"
+        self.criterion = nn.CrossEntropyLoss(reduction=reduction)
+        self.optimizer = SGD(self.model.parameters(), **cfg.optimizer.dict())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
-        self.lambda_l1 = cfg.optimizer.lambda_l1
         self.propensity = cfg.experiment.analysis == "propensity"
 
     def forward(self, inputs):
         return self.model(inputs)
 
-    def l1_loss(self):
-        match self.model:
-            case SequenceModel():
-                return self.lambda_l1 * torch.norm(self.model.rnn.weight_ih_l0)
-            case MultiLayerPerceptron():
-                return self.lambda_l1 * torch.norm(self.model.mlp[0].weight)
-            case _:
-                raise ValueError(
-                    f"L1 regularization not implemented for {type(self.model)}"
-                )
+    def step(self, step: str, batch: tuple[torch.Tensor, ...]):
+        inputs, labels = batch
+        outputs: torch.Tensor = self(inputs)
+        is_not_nan = ~torch.isnan(labels).flatten()
+        outputs = outputs.flatten(0, 1)[is_not_nan]
+        labels = labels.flatten()[is_not_nan]
+        loss: torch.Tensor = self.criterion(outputs, labels.long())
+        metrics = make_metrics(step, loss, outputs, labels)
+        self.log_dict(metrics, prog_bar=True)
+        return loss
 
-    def step(self, step: str, batch):
+    def propensity_step(self, step: str, batch: tuple[torch.Tensor, ...]):
         inputs, labels, propensity = batch
-        outputs = self(inputs)
-        outputs, labels, propensity = drop_nan(outputs, labels, propensity)
-        loss = self.criterion(outputs, labels)
-        if self.propensity:
-            weight = 1 / (propensity + 1e-8)
-            loss = loss * weight
+        outputs: torch.Tensor = self(inputs)
+        is_not_nan = ~torch.isnan(labels).flatten()
+        outputs = outputs.flatten(0, 1)[is_not_nan]
+        labels = labels.flatten()[is_not_nan]
+        loss: torch.Tensor = self.criterion(outputs, labels.long())
+        propensity = propensity.flatten()[is_not_nan]
+        loss = loss * (1 / (propensity + 1e-7))
         loss = loss.mean()
         metrics = make_metrics(step, loss, outputs, labels)
         self.log_dict(metrics, prog_bar=True)
         return loss
 
     def training_step(self, batch, batch_idx):
+        if self.propensity:
+            return self.propensity_step("train", batch)
         return self.step("train", batch)
 
     def validation_step(self, batch, batch_idx):
+        if self.propensity:
+            return self.propensity_step("val", batch)
         return self.step("val", batch)
 
     def test_step(self, batch, batch_idx):
+        if self.propensity:
+            return self.propensity_step("test", batch)
         self.step("test", batch)
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        inputs, labels, _ = batch
+        if self.propensity:
+            inputs, labels, _ = batch
+        else:
+            inputs, labels = batch
         outputs = self(inputs)
-        outputs, labels, _ = drop_nan(outputs, labels, _)
+        is_not_nan = ~torch.isnan(labels).flatten()
+        outputs = outputs.flatten(0, 1)[is_not_nan]
+        labels = labels.flatten()[is_not_nan]
         return outputs, labels
 
     def configure_optimizers(self):
@@ -200,7 +202,9 @@ class Network(LightningModule):
 
 
 def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
-    callbacks: list = [RichProgressBar()]
+    callbacks: list = []
+    if cfg.trainer.enable_progress_bar:
+        callbacks.append(RichProgressBar())
     if checkpoint:
         checkpoint_callback = ModelCheckpoint(
             dirpath=cfg.filepaths.data.results.checkpoints,
@@ -215,19 +219,19 @@ def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
     trainer = Trainer(
         logger=logger,
         callbacks=callbacks,
-        enable_checkpointing=checkpoint,
         accelerator="auto",
         devices="auto",
         log_every_n_steps=cfg.logging.log_every_n_steps,
         fast_dev_run=cfg.fast_dev_run,
         check_val_every_n_epoch=1,
-        **cfg.trainer.model_dump(),
+        enable_checkpointing=checkpoint,
+        **cfg.trainer.dict(),
     )
     return trainer
 
 
 def make_architecture(cfg: Model):
-    hparams = cfg.model_dump(exclude={"method"})
+    hparams = cfg.dict(exclude={"method"})
     sequence_model = partial(SequenceModel, **hparams)
     match cfg.method:
         case "rnn":
