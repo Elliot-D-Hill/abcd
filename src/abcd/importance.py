@@ -1,3 +1,4 @@
+import time
 from functools import partial
 
 import polars as pl
@@ -5,6 +6,7 @@ import torch
 from captum.attr import GradientShap
 from lightning import LightningDataModule
 from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import make_pipeline
 from sklearn.utils import resample
 
 from abcd.config import Config
@@ -36,7 +38,12 @@ def make_shap_values(cfg: Config, data_module: LightningDataModule):
 def regress_shap_values(df: pl.DataFrame):
     x = df.select("feature_value").to_numpy()
     y = df.select("shap_value").to_numpy()
-    return LinearRegression().fit(x, y).coef_.item()
+    return (
+        make_pipeline(LinearRegression())
+        .fit(x, y)
+        .named_steps["linearregression"]
+        .coef_.item()
+    )
 
 
 def bootstrap_shap_values(df: pl.DataFrame, n_bootstraps: int):
@@ -72,6 +79,7 @@ def format_shap_values(cfg: Config, data_module: LightningDataModule):
     shap = shap.unpivot(index=cfg.index.sample_id, value_name="shap_value")
     shap = shap.join(features, on=[cfg.index.sample_id, "variable"])
     shap = shap.join(metadata, on="variable")
+    shap = shap.drop_nulls()
     shap.write_parquet(cfg.filepaths.data.results.shap_values)
 
 
@@ -97,17 +105,19 @@ def group_shap_coef(cfg: Config):
     shap = shap.group_by([cfg.index.sample_id, "dataset", "respondent"]).sum()
     data: list[pl.DataFrame] = []
     groups = ["dataset", "respondent"]
+    start_time = time.perf_counter()
     for (dataset, respondent), group in shap.group_by(groups):
         bootstraps = bootstrap_shap_values(group, n_bootstraps=1000)
         bootstraps = bootstraps.with_columns(
             dataset=pl.lit(dataset), respondent=pl.lit(respondent)
         )
         data.append(bootstraps)
+    print((time.perf_counter() - start_time) / 60)
     df = pl.concat(data)
     df.write_parquet(cfg.filepaths.data.results.group_shap_coef)
 
 
 def estimate_importance(cfg: Config, data_module: LightningDataModule):
     make_shap_values(cfg=cfg, data_module=data_module)
-    shap_coef(cfg=cfg)
+    # shap_coef(cfg=cfg)
     group_shap_coef(cfg=cfg)

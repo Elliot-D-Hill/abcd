@@ -62,8 +62,7 @@ def tune_model(cfg: Config, data_module):
     objective = Objective(cfg=cfg, data_module=data_module)
     half_trials = cfg.tuner.n_trials // 2
     study.optimize(func=objective, n_trials=half_trials)
-    sampler = TPESampler(multivariate=True, seed=cfg.random_seed)
-    study.sampler = sampler
+    study.sampler = TPESampler(multivariate=True, seed=cfg.random_seed)
     study.optimize(func=objective, n_trials=half_trials)
     df = pl.DataFrame(study.trials_dataframe())
     df.write_parquet("data/study.parquet")

@@ -1,12 +1,12 @@
 random_seed = 42
 device = "mps"
 fast_dev_run = false
-regenerate = false
+regenerate = true
 tune = false
 log = false
 predict = false
 evaluate = false
-importance = true
+importance = false
 plot = false
 tables = false
 verbose = false
@@ -27,7 +27,7 @@ analyses = [
     # "propensity",
     # "site",
     # "mri",
-    "questions",
+    # "questions",
     # "questions_mri",
     # "questions_symptoms",
     # "symptoms",
@@ -67,7 +67,7 @@ persistent_workers = true
 multiprocessing_context = "fork"
 
 [tuner]
-n_trials = 8
+n_trials = 128
 sampler = "tpe"
 
 [trainer]
