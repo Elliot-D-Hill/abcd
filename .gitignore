@@ -136,3 +136,4 @@ results/
 data_copy/
 .vscode
 notebooks/
+logs/
