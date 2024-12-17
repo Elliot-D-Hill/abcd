@@ -2,8 +2,6 @@ from pathlib import Path
 
 import optuna
 import polars as pl
-import torch
-from lightning import LightningModule
 from optuna.samplers import QMCSampler, TPESampler
 
 from abcd.config import Config
@@ -20,6 +18,7 @@ def make_params(trial: optuna.Trial, cfg: Config):
     cfg.model.hidden_dim = trial.suggest_int(**hparams.model.hidden_dim)
     cfg.model.num_layers = trial.suggest_int(**hparams.model.num_layers)
     cfg.model.dropout = trial.suggest_float(**hparams.model.dropout)
+    cfg.model.l1_lambda = trial.suggest_float(**hparams.model.l1_lambda)
     cfg.optimizer.lr = trial.suggest_float(**hparams.optimizer.lr)
     cfg.optimizer.weight_decay = trial.suggest_float(**hparams.optimizer.weight_decay)
     cfg.trainer.max_epochs = trial.suggest_int(**hparams.trainer.max_epochs)
@@ -46,7 +45,7 @@ class Objective:
         path = Path(cfg.filepaths.data.results.checkpoints / "last.ckpt")
         if path.exists():
             path.unlink()
-        model: LightningModule = torch.compile(model, fullgraph=True)  # type: ignore
+        # model: LightningModule = torch.compile(model)  # type: ignore
         trainer.fit(model, datamodule=self.data_module)
         metrics = trainer.validate(model, datamodule=self.data_module, ckpt_path="last")
         val_loss = metrics[-1]["val_loss"]
@@ -64,8 +63,7 @@ def tune_model(cfg: Config, data_module):
     objective = Objective(cfg=cfg, data_module=data_module)
     half_trials = cfg.tuner.n_trials // 2
     study.optimize(func=objective, n_trials=half_trials)
-    sampler = TPESampler(multivariate=True, seed=cfg.random_seed)
-    study.sampler = sampler
+    study.sampler = TPESampler(multivariate=True, seed=cfg.random_seed)
     study.optimize(func=objective, n_trials=half_trials)
     df = pl.DataFrame(study.trials_dataframe())
     df.write_parquet("data/study.parquet")

@@ -84,7 +84,7 @@ def get_mri_datasets(cfg: Config) -> list[pl.LazyFrame]:
             n_rows=2000 if cfg.fast_dev_run else None,
         )
         df = df.filter(pl.col(cfg.index.event).is_in(EVENTS))
-        df = df.pipe(drop_null_columns, cutoff=cfg.preprocess.null_cutoff)
+        # df = df.pipe(drop_null_columns, cutoff=cfg.preprocess.null_cutoff)
         df = df.with_columns(cs.numeric().shrink_dtype())
         dfs.append(df)
     return dfs

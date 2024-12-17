@@ -65,6 +65,7 @@ class Model(BaseModel):
     hidden_dim: int
     num_layers: int
     dropout: float
+    l1_lambda: float
     output_dim: int
     input_dim: int | None = None
 
@@ -74,6 +75,7 @@ class ModelHParams(BaseModel):
     num_layers: dict
     dropout: dict
     method: dict
+    l1_lambda: dict
 
 
 class OptimizerHParams(BaseModel):

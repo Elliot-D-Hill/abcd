@@ -6,7 +6,7 @@
 #SBATCH --partition=engelhardlab-gpu        # Partition to submit to
 #SBATCH --account=engelhardlab              # Account name
 #SBATCH --cpus-per-task=10                  # Number of CPUs per task
-#SBATCH --mem=50G                           # CPU Memory
+#SBATCH --mem=20G                           # CPU Memory
 #### #SBATCH --mem-per-cpu=2G                    # CPU Memory
 #SBATCH --gres=gpu:1                        # Request GPUs
 #SBATCH --exclusive                         # Request exclusive node
