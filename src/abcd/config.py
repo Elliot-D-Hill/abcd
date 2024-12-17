@@ -1,8 +1,8 @@
 from copy import deepcopy
 from pathlib import Path
 
+import tomllib
 from pydantic import BaseModel
-from tomllib import load
 
 
 class Experiment(BaseModel):
@@ -40,11 +40,12 @@ class Dataloader(BaseModel):
 class Trainer(BaseModel):
     gradient_clip_val: float
     max_epochs: int
+    enable_model_summary: bool
+    enable_progress_bar: bool
 
 
 class Tuner(BaseModel):
     n_trials: int
-    sampler: str
 
 
 class Logging(BaseModel):
@@ -56,7 +57,6 @@ class Optimizer(BaseModel):
     lr: float
     momentum: float
     weight_decay: float
-    lambda_l1: float
     nesterov: bool
 
 
@@ -65,8 +65,9 @@ class Model(BaseModel):
     hidden_dim: int
     num_layers: int
     dropout: float
-    input_dim: int
+    l1_lambda: float
     output_dim: int
+    input_dim: int | None = None
 
 
 class ModelHParams(BaseModel):
@@ -74,13 +75,13 @@ class ModelHParams(BaseModel):
     num_layers: dict
     dropout: dict
     method: dict
+    l1_lambda: dict
 
 
 class OptimizerHParams(BaseModel):
     lr: dict
     momentum: dict
     weight_decay: dict
-    lambda_l1: dict
 
 
 class TrainerHParams(BaseModel):
@@ -207,13 +208,13 @@ class Config(BaseModel):
 
 
 def update_paths(new_path: Path, cfg: Config) -> Config:
-    analytic = deepcopy(cfg.filepaths.data.analytic.model_dump())
+    analytic = deepcopy(cfg.filepaths.data.analytic.dict())
     for name, path in analytic.items():
         new_filepath = new_path / "analytic" / path
         new_filepath.parent.mkdir(parents=True, exist_ok=True)
         analytic[name] = new_filepath
     cfg.filepaths.data.analytic = Splits(**analytic)
-    results = deepcopy(cfg.filepaths.data.results.model_dump())
+    results = deepcopy(cfg.filepaths.data.results.dict())
     for name, path in results.items():
         new_filepath = new_path / "results" / path
         new_filepath.parent.mkdir(parents=True, exist_ok=True)
@@ -224,7 +225,8 @@ def update_paths(new_path: Path, cfg: Config) -> Config:
 
 def get_config(path: str, factor_model: str, analysis: str | None = None) -> Config:
     with open(path, "rb") as f:
-        cfg = Config(**load(f))
+        data = tomllib.load(f)
+        cfg = Config(**data)
     if analysis is None:
         return cfg
     elif analysis == "metadata":

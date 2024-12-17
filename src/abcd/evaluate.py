@@ -162,7 +162,7 @@ def make_prevalence(df: pl.DataFrame):
 def evaluate_model(cfg: Config, data_module: ABCDDataModule):
     model = get_model(cfg=cfg)
     model.to(cfg.device)
-    cfg.filepaths.data.results.metrics.mkdir(parents=True, exist_ok=True)
+    # cfg.filepaths.data.results.metrics.mkdir(parents=True, exist_ok=True)
     if cfg.predict or not cfg.filepaths.data.results.predictions.is_file():
         df = make_predictions(cfg=cfg, model=model, data_module=data_module)
         df.write_parquet(cfg.filepaths.data.results.predictions)

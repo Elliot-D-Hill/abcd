@@ -18,9 +18,9 @@ def make_params(trial: optuna.Trial, cfg: Config):
     cfg.model.hidden_dim = trial.suggest_int(**hparams.model.hidden_dim)
     cfg.model.num_layers = trial.suggest_int(**hparams.model.num_layers)
     cfg.model.dropout = trial.suggest_float(**hparams.model.dropout)
+    cfg.model.l1_lambda = trial.suggest_float(**hparams.model.l1_lambda)
     cfg.optimizer.lr = trial.suggest_float(**hparams.optimizer.lr)
     cfg.optimizer.weight_decay = trial.suggest_float(**hparams.optimizer.weight_decay)
-    cfg.optimizer.lambda_l1 = trial.suggest_float(**hparams.optimizer.lambda_l1)
     cfg.trainer.max_epochs = trial.suggest_int(**hparams.trainer.max_epochs)
     return cfg
 
@@ -45,6 +45,7 @@ class Objective:
         path = Path(cfg.filepaths.data.results.checkpoints / "last.ckpt")
         if path.exists():
             path.unlink()
+        # model: LightningModule = torch.compile(model)  # type: ignore
         trainer.fit(model, datamodule=self.data_module)
         metrics = trainer.validate(model, datamodule=self.data_module, ckpt_path="last")
         val_loss = metrics[-1]["val_loss"]
