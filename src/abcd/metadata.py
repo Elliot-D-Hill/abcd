@@ -1,6 +1,6 @@
 import polars as pl
 import polars.selectors as cs
-from nanuk.preprocess import join_dataframes
+from nanook.frame import join_dataframes
 
 from abcd.config import Config
 from abcd.constants import COLUMNS, EVENTS_TO_NAMES, RACE_MAPPING, SEX_MAPPING
@@ -44,7 +44,7 @@ def make_metadata(cfg: Config) -> None:
         return
     dfs = get_datasets(cfg=cfg)
     make_variable_metadata(cfg=cfg, dfs=dfs)
-    df = join_dataframes(dfs=dfs, on=cfg.index.join_on, how="left")
+    df = join_dataframes(frames=dfs, on=cfg.index.join_on, how="left")
     df = make_subject_metadata(df=df)
     labels = make_labels(cfg=cfg)
     df = labels.join(df, on=cfg.index.join_on, how="left").select(COLUMNS.keys())
@@ -78,7 +78,7 @@ def rename_questions() -> pl.Expr:
 
 def rename_datasets() -> pl.Expr:
     return (
-        pl.when(pl.col("variable").str.contains("eventname|site_id"))
+        pl.when(pl.col("variable").str.contains("eventname"))
         .then(pl.lit("Follow-up event"))
         .when(pl.col("variable").str.contains("demo_sex_v2_|interview_age"))
         .then(pl.lit("Age and sex"))
@@ -111,7 +111,7 @@ def format_questions() -> pl.Expr:
 
 def make_variable_df(cfg: Config, columns: list[list[str]]) -> pl.DataFrame:
     dfs: list[pl.DataFrame] = []
-    for cols, (filename, metadata) in zip(columns, cfg.features.model_dump().items()):
+    for cols, (filename, metadata) in zip(columns, cfg.features.dict().items()):
         table_metadata = {"table": [], "dataset": [], "respondent": [], "variable": []}
         for column in cols:
             table_metadata["table"].append(filename)

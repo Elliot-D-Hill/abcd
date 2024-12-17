@@ -1,12 +1,12 @@
 random_seed = 42
-device = "mps"
+device = "cuda"
 fast_dev_run = false
 regenerate = false
-tune = true
+tune = false
 log = false
 predict = false
 evaluate = false
-importance = false
+importance = true
 plot = false
 tables = false
 verbose = false
@@ -17,20 +17,25 @@ sample_id = "src_subject_id"
 event = "eventname"
 label = "y_{t+1}"
 split = "split"
+site = "site_id_l"
+propensity = "acs_raked_propensity_score"
 
 [experiment]
-factor_models = ["within_event"] # , "across_event", "ksads"]
 factor_model = "within_event"
+factor_models = ["within_event"] # , "across_event", "ksads"]
 analyses = [
-    "mri",
-    # "questions",
+    # "propensity",
+    # "site",
+    # "mri",
+    "questions",
+    # "questions_mri_all",
     # "questions_mri",
     # "questions_symptoms",
     # "symptoms",
     # "questions_mri_symptoms",
     # "autoregressive",
 ]
-analysis = "mri"
+analysis = "questions"
 split_on = "src_subject_id" # sample_id, site_id
 
 [preprocess]
@@ -56,7 +61,7 @@ val = 0.1
 test = 0.1
 
 [dataloader]
-batch_size = 512
+batch_size = 256
 num_workers = 10
 pin_memory = true
 persistent_workers = true
@@ -64,46 +69,41 @@ multiprocessing_context = "fork"
 
 [tuner]
 n_trials = 128
-sampler = "tpe"
 
 [trainer]
 gradient_clip_val = 1.0
 max_epochs = 100
+enable_progress_bar = false
+enable_model_summary = false
 
 [optimizer]
 nesterov = true
 momentum = 0.9
 lr = 1e-3
 weight_decay = 1e-4
-lambda_l1 = 1e-4
 
 [model]
 method = "lstm"
 hidden_dim = 128
 dropout = 0.5
+l1_lambda = 1e-5
 num_layers = 2
-input_dim = 0    # determined by data at runtime
 output_dim = 4
 
 [hyperparameters]
 [hyperparameters.trainer.max_epochs]
 name = "max_epochs"
-low = 5
+low = 10
 high = 100
 [hyperparameters.optimizer.lr]
 name = "lr"
-low = 1e-5
+low = 1e-4
 high = 1e-2
 log = true
 [hyperparameters.optimizer.weight_decay]
 name = "weight_decay"
-low = 1e-8
-high = 1e-2
-log = true
-[hyperparameters.optimizer.lambda_l1]
-name = "lambda_l1"
-low = 1e-8
-high = 1e-2
+low = 1e-7
+high = 1e-1
 log = true
 [hyperparameters.optimizer.momentum]
 name = "momentum"
@@ -111,15 +111,21 @@ low = 0.9
 high = 0.99
 [hyperparameters.model.method]
 name = "method"
-choices = ["mlp", "rnn", "lstm"]
+low = 0
+high = 2
 [hyperparameters.model.hidden_dim]
 name = "hidden_dim"
-low = 32
+low = 64
 high = 128
 [hyperparameters.model.dropout]
 name = "dropout"
-low = 0.0
-high = 0.75
+low = 0.3
+high = 0.90
+[hyperparameters.model.l1_lambda]
+name = "l1_lambda"
+low = 1e-7
+high = 1e-1
+log = true
 [hyperparameters.model.num_layers]
 name = "num_layers"
 low = 1
@@ -150,17 +156,20 @@ dataset = "data/processed/dataset.parquet"
 metadata = "data/processed/metadata.parquet"
 subject_metadata = "data/processed/subject_metadata.parquet"
 [filepaths.data.analytic]
-path = "analytic/"
-train = "analytic/train.parquet"
-val = "analytic/val.parquet"
-test = "analytic/test.parquet"
+path = ""
+train = "train.parquet"
+val = "val.parquet"
+test = "test.parquet"
 [filepaths.data.results]
-metrics = "results/metrics"
-checkpoints = "results/checkpoints"
-best_model = "results/checkpoints/best.ckpt"
-study = "results/study.pkl"
-logs = "results/lightning_logs"
-predictions = "results/predictions.parquet"
+metrics = "metrics/"
+checkpoints = "checkpoints/"
+best_model = "checkpoints/best.ckpt"
+study = "study.pkl"
+logs = "lightning_logs/"
+predictions = "predictions.parquet"
+shap_values = "shap_values.parquet"
+shap_coef = "shap_coef.parquet"
+group_shap_coef = "group_shap_coef.parquet"
 
 [features]
 [features.mh_p_cbcl]
@@ -185,6 +194,7 @@ columns = [
     "demo_comb_income_v2",
     "demo_prnt_ed_v2",
     "demo_prtnr_ed_v2",
+    "acs_raked_propensity_score",
 ]
 [features.led_l_adi]
 name = "Area deprivation"
@@ -197,7 +207,7 @@ columns = [
 [features.abcd_y_lt]
 name = "Demographics"
 respondent = "Parent"
-columns = ["interview_age", "interview_date"] # , "site_id_l"
+columns = ["interview_age", "interview_date", "site_id_l"] # , 
 [features.abcd_aces]
 name = "Adverse childhood experiences (ACEs)"
 respondent = "Parent"                         # TODO check if this is from parent, youth, or both
