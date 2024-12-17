@@ -6,9 +6,7 @@ from captum.attr import GradientShap
 from lightning import LightningDataModule
 from sklearn.linear_model import LinearRegression
 from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
 from sklearn.utils import resample
-from tqdm import tqdm
 
 from abcd.config import Config
 from abcd.tune import get_model
@@ -16,63 +14,114 @@ from abcd.tune import get_model
 
 def predict(x, model):
     output = model(x)
-    return output.sum(dim=1)[:, -1]
+    output = output.sum(dim=1)
+    output = output[:, -1]  # 4th (last) quartile output
+    return output
 
 
-def make_shap_values(model, X, background, columns):
-    f = partial(predict, model=model.to("mps:0"))
-    explainer = GradientShap(f)
-    shap_values = explainer.attribute(X.to("mps:0"), background.to("mps:0"))
-    return pl.DataFrame(shap_values.flatten(0, 1).cpu().numpy(), schema=columns)
-
-
-def regress_shap_values(df: pl.DataFrame, groups: list[str] | str, n_bootstraps: int):
-    data = []
-    for _ in tqdm(range(n_bootstraps)):
-        resampled = resample(df)  # type: ignore
-        coef = (
-            make_pipeline(StandardScaler(), LinearRegression())
-            .fit(resampled.select("feature_value"), resampled.select("shap_value"))  # type: ignore
-            .named_steps["linearregression"]
-            .coef_[0, 0]
-        )
-        row = df.select(groups)[0].to_dicts()[0] | {"coefficient": coef}
-        data.append(row)
-    df = pl.DataFrame(data)
-    return df
-
-
-def make_shap(cfg: Config, data_module: LightningDataModule):
+def make_shap_values(cfg: Config, data_module: LightningDataModule):
     model = get_model(cfg, best=True)
-    test_dataloader = iter(data_module.test_dataloader())
-    X = torch.cat([x for x, _ in test_dataloader])
-    val_dataloader = iter(data_module.val_dataloader())
-    background = torch.cat([x for x, _ in val_dataloader])
-    features = pl.read_csv(cfg.filepaths.data.analytic.test).drop(["y_{t+1}"])
-    subject_id = (
-        features.select()
-        .unique(subset=cfg.index.sample_id, maintain_order=True)
-        .select(pl.col(cfg.index.sample_id).repeat_by(4).flatten())
-        .to_series()
+    test_batches = data_module.test_dataloader()
+    val_batches = data_module.val_dataloader()
+    inputs = torch.cat([batch[0] for batch in test_batches])
+    background = torch.cat([batch[0] for batch in val_batches])
+    inputs = inputs.to("mps:0")
+    background = background.to("mps:0")
+    model.to("mps:0")
+    f = partial(predict, model=model)
+    explainer = GradientShap(f)
+    shap_values = explainer.attribute(inputs, background)
+    return shap_values.flatten(0, 1).cpu().numpy()
+
+
+def regress_shap_values(df: pl.DataFrame):
+    x = df.select("feature_value").to_numpy()
+    y = df.select("shap_value").to_numpy()
+    return (
+        make_pipeline(LinearRegression())
+        .fit(x, y)
+        .named_steps["linearregression"]
+        .coef_.item()
     )
-    events = pl.Series([1, 2, 3, 4] * features[cfg.index.sample_id].n_unique()).alias(
-        cfg.index.event
+
+
+def bootstrap_shap_values(df: pl.DataFrame, n_bootstraps: int):
+    data = []
+    for _ in range(n_bootstraps):
+        resampled = resample(df)  # type: ignore
+        coef = regress_shap_values(df=resampled)  # type: ignore
+        data.append({"coefficient": coef})
+    return pl.DataFrame(data)
+
+
+def pad_frame(df: pl.DataFrame, sample_id: str) -> pl.DataFrame:
+    dfs = []
+    max_len: int = df.group_by(sample_id).agg(pl.len())["len"].max()  # type: ignore
+    for group in df.partition_by(sample_id, maintain_order=True):
+        padding_length = max_len - group.height
+        padding = pl.DataFrame({col: [None] * padding_length for col in df.columns})
+        group = group.vstack(padding)
+        dfs.append(group)
+    return pl.concat(dfs)
+
+
+def format_shap_values(cfg: Config, data_module: LightningDataModule):
+    # metadata = pl.read_excel("data/supplement/tables/supplementary_table_1.xlsx")
+    metadata = pl.read_parquet("data/supplement/tables/supplementary_table_1.parquet")
+    features = pl.read_parquet(cfg.filepaths.data.analytic.test)
+    features = pad_frame(features, sample_id=cfg.index.sample_id)
+    features = features.drop([cfg.index.split, cfg.index.label, cfg.index.propensity])
+    sample_id = features[cfg.index.sample_id]
+    columns = features.columns[1:]
+    features = features.group_by(cfg.index.sample_id).sum()
+    features = features.unpivot(index=cfg.index.join_on, value_name="feature_value")
+    shap = make_shap_values(cfg=cfg, data_module=data_module)
+    shap = (
+        pl.DataFrame(shap, schema=columns)
+        .with_columns(sample_id)
+        .group_by(sample_id)
+        .sum()
     )
-    features.drop_in_place(cfg.index.sample_id)
-    shap_values = make_shap_values(model, X, background, columns=features.columns)
-    metadata = pl.read_csv("data/supplement/tables/supplemental_table_1.csv")
-    features = (
-        pl.DataFrame(X.flatten(0, 1).numpy(), schema=features.columns)
-        .with_columns(subject_id, events)
-        .unpivot(index=cfg.index.join_on, value_name="feature_value")
-    )
-    shap_values = (
-        shap_values.with_columns(subject_id, events)
-        .unpivot(index=cfg.index.join_on, value_name="shap_value")
-        .join(features, on=cfg.index.join_on + ["variable"], how="inner")
-        .join(metadata, on="variable", how="inner")
-        .rename({"respondent": "Respondent"})
-        .filter(pl.col("dataset").ne("Follow-up event"))
-    )
-    path = f"data/analyses/{cfg.experiment.factor_model}/{cfg.experiment.analysis}/results/"
-    shap_values.write_csv(path + "shap_values.csv")
+    shap = shap.unpivot(index=cfg.index.join_on, value_name="shap_value")
+    shap = shap.join(features, on=[cfg.index.sample_id, "variable"])
+    shap = shap.drop_nulls()
+    shap = shap.join(metadata, on="variable")
+    shap.write_parquet(cfg.filepaths.data.results.shap_values)
+
+
+def shap_coef(cfg: Config):
+    shap = pl.read_parquet(cfg.filepaths.data.results.shap_values)
+    metadata = pl.read_parquet("data/supplement/tables/supplementary_table_1.parquet")
+    shap = shap.join(metadata, on=["variable", "respondent"])
+    data: list[pl.DataFrame] = []
+    groups = ["question", "respondent"]
+    for (question, respondent), group in shap.group_by(groups):
+        bootstraps = bootstrap_shap_values(group, n_bootstraps=1000)
+        bootstraps = bootstraps.with_columns(
+            question=pl.lit(question), respondent=pl.lit(respondent)
+        )
+        data.append(bootstraps)
+    df = pl.concat(data)
+    df = df.join(metadata, on=groups)
+    df.write_parquet(cfg.filepaths.data.results.shap_coef)
+
+
+def group_shap_coef(cfg: Config):
+    shap = pl.read_parquet(cfg.filepaths.data.results.shap_values)
+    groups = ["dataset", "respondent"]
+    shap = shap.group_by([cfg.index.sample_id] + groups).sum()
+    data: list[pl.DataFrame] = []
+    for (dataset, respondent), group in shap.group_by(groups):
+        bootstraps = bootstrap_shap_values(group, n_bootstraps=1000)
+        bootstraps = bootstraps.with_columns(
+            dataset=pl.lit(dataset), respondent=pl.lit(respondent)
+        )
+        data.append(bootstraps)
+    df = pl.concat(data)
+    df.write_parquet(cfg.filepaths.data.results.group_shap_coef)
+
+
+def estimate_importance(cfg: Config, data_module: LightningDataModule):
+    format_shap_values(cfg=cfg, data_module=data_module)
+    # shap_coef(cfg=cfg)
+    group_shap_coef(cfg=cfg)

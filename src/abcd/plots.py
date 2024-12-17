@@ -5,6 +5,8 @@ import polars as pl
 import polars.selectors as cs
 import seaborn as sns
 
+from abcd.config import Config
+
 FORMAT = "pdf"
 
 
@@ -60,6 +62,7 @@ def quartile_curves():
                 color="black",
             )
         ax.set_ylim(0.0, 1.05)
+    # sns.despine()
     plt.subplots_adjust(hspace=0.3)  # , wspace=0.4
     plt.savefig(f"data/figures/figure_1.{FORMAT}", format=FORMAT)
 
@@ -89,6 +92,7 @@ def analysis_comparison():
     g.set_titles("{col_name}")
     g.set(ylim=(0.5, 1.0))
     g.set_axis_labels("Risk", "AUROC")
+    # sns.despine()
     plt.savefig(
         f"data/supplement/figures/supplementary_figure_1.{FORMAT}",
         format=FORMAT,
@@ -164,48 +168,38 @@ def shap_plot(
     ]
     g.set_yticklabels(labels)
     g.yaxis.grid(True)
-
+    # sns.despine()
     plt.axvline(x=0, color="black", linestyle="--")
     plt.tight_layout()
     plt.savefig(f"{filepath}.{FORMAT}", format=FORMAT)
 
 
-def grouped_shap_plot(
-    filepath: str, analysis: str, factor_model: str, figsize: tuple[int, int]
-):
-    plt.figure(figsize=figsize)
-    df = pl.read_csv(f"data/analyses/{factor_model}/{analysis}/results/shap_values.csv")
-    n_bootstraps = 1000
-    dfs = []
-    for _ in range(n_bootstraps):
-        resampled = (
-            df.sample(fraction=1.0, with_replacement=True)
-            .group_by("dataset", "Respondent")
-            .agg(pl.col("shap_value").sum())
-        )
-        dfs.append(resampled)
-    df = pl.concat(dfs)
+def group_shap_coef(filepath: str, cfg: Config):
+    plt.figure(figsize=(8, 5))
+    df = pl.read_parquet(cfg.filepaths.data.results.group_shap_coef)
+    groups = ["dataset", "respondent"]
     order = (
-        df.group_by("dataset", "Respondent")
-        .agg(pl.col("shap_value").sum().abs())
-        .sort("shap_value", descending=True)["dataset"]
+        df.group_by(groups)
+        .agg(pl.col("coefficient").mean().abs())
+        .sort("coefficient", descending=True)["dataset"]
         .to_list()
     )
     g = sns.pointplot(
-        data=df.to_pandas(),
-        x="shap_value",
+        data=df,
+        x="coefficient",
         y="dataset",
-        hue="Respondent",
+        hue="respondent",
         linestyles="none",
         order=order,
         errorbar="pi",
     )
+    sns.despine()
     g.set_yticks(g.get_yticks())
-    labels = [textwrap.fill(label.get_text(), 28) for label in g.get_yticklabels()]
+    labels = [textwrap.fill(label.get_text(), 36) for label in g.get_yticklabels()]
     g.set_yticklabels(labels)
-    # g.yaxis.grid(True)
-    sns.move_legend(g, "lower right")
-    g.set(ylabel="Predictor category", xlabel="Summed SHAP value")
+    sns.move_legend(g, "lower left")
+    g.set(ylabel="Predictor category", xlabel="SHAP value coefficient")
+    plt.legend(title="Respondent")
     g.yaxis.grid(True)
     plt.axvline(x=0, color="black", linestyle="--")
     plt.tight_layout()
@@ -243,6 +237,7 @@ def p_factor_model_comparison():
     g.set_axis_labels("Risk group", "AUROC")
     for ax in g.axes.flat:
         ax.axhline(0.5, color="black", linestyle="--")
+    # sns.despine()
     plt.savefig(
         f"data/supplement/figures/supplementary_figure_4.{FORMAT}",
         format=FORMAT,
@@ -255,12 +250,7 @@ def plot(cfg):
     sns.set_context("paper", font_scale=1.4)
 
     # quartile_curves()
-    grouped_shap_plot(
-        filepath="data/figures/small_figure_2",
-        analysis="questions",
-        factor_model="within_event",
-        figsize=(7, 4),
-    )
+    group_shap_coef(filepath="data/figures/figure_2", cfg=cfg)
     # analysis_comparison()
     # shap_plot(
     #     filepath="data/supplement/figures/supplementary_figure_2",

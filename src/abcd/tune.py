@@ -8,16 +8,19 @@ from abcd.config import Config
 from abcd.dataset import ABCDDataModule
 from abcd.model import Network, make_trainer
 
+METHODS = {0: "mlp", 1: "rnn", 2: "lstm"}
+
 
 def make_params(trial: optuna.Trial, cfg: Config):
     hparams = cfg.hyperparameters
-    cfg.model.method = trial.suggest_categorical(**hparams.model.method)
+    method_index = trial.suggest_int(**hparams.model.method)
+    cfg.model.method = METHODS[method_index]
     cfg.model.hidden_dim = trial.suggest_int(**hparams.model.hidden_dim)
     cfg.model.num_layers = trial.suggest_int(**hparams.model.num_layers)
     cfg.model.dropout = trial.suggest_float(**hparams.model.dropout)
+    # cfg.model.l1_lambda = trial.suggest_float(**hparams.model.l1_lambda)
     cfg.optimizer.lr = trial.suggest_float(**hparams.optimizer.lr)
     cfg.optimizer.weight_decay = trial.suggest_float(**hparams.optimizer.weight_decay)
-    cfg.optimizer.lambda_l1 = trial.suggest_float(**hparams.optimizer.lambda_l1)
     cfg.trainer.max_epochs = trial.suggest_int(**hparams.trainer.max_epochs)
     return cfg
 
@@ -42,6 +45,7 @@ class Objective:
         path = Path(cfg.filepaths.data.results.checkpoints / "last.ckpt")
         if path.exists():
             path.unlink()
+        # model: LightningModule = torch.compile(model)  # type: ignore
         trainer.fit(model, datamodule=self.data_module)
         metrics = trainer.validate(model, datamodule=self.data_module, ckpt_path="last")
         val_loss = metrics[-1]["val_loss"]
@@ -51,27 +55,15 @@ class Objective:
         return val_loss
 
 
-def get_sampler(cfg: Config):
-    half_trials = cfg.tuner.n_trials // 2
-    if cfg.tuner.sampler == "tpe":
-        sampler = TPESampler(
-            multivariate=True, n_startup_trials=half_trials, seed=cfg.random_seed
-        )
-    elif cfg.tuner.sampler == "qmc":
-        sampler = QMCSampler(seed=cfg.random_seed)
-    else:
-        raise ValueError(
-            f"Invalid sampler '{cfg.tuner.sampler}'. Choose from: 'tpe', 'qmc'"
-        )
-    return sampler
-
-
-def tune(cfg: Config, data_module):
-    sampler = get_sampler(cfg=cfg)
+def tune_model(cfg: Config, data_module):
+    sampler = QMCSampler(seed=cfg.random_seed)
     study = optuna.create_study(
         sampler=sampler, direction="minimize", study_name="ABCD"
     )
-    objective_function = Objective(cfg=cfg, data_module=data_module)
-    study.optimize(func=objective_function, n_trials=cfg.tuner.n_trials)
+    objective = Objective(cfg=cfg, data_module=data_module)
+    half_trials = cfg.tuner.n_trials // 2
+    study.optimize(func=objective, n_trials=half_trials)
+    study.sampler = TPESampler(multivariate=True, seed=cfg.random_seed)
+    study.optimize(func=objective, n_trials=half_trials)
     df = pl.DataFrame(study.trials_dataframe())
     df.write_parquet("data/study.parquet")
