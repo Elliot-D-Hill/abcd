@@ -137,7 +137,7 @@ class Network(LightningModule):
         self.optimizer = SGD(self.model.parameters(), **cfg.optimizer.dict())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
         self.propensity = cfg.experiment.analysis == "propensity"
-        self.l1_lambda = cfg.model.l1_lambda
+        # self.l1_lambda = cfg.model.l1_lambda
 
     def forward(self, inputs):
         return self.model(inputs)
@@ -149,8 +149,8 @@ class Network(LightningModule):
         outputs = outputs.flatten(0, 1)[is_not_nan]
         labels = labels.flatten()[is_not_nan]
         loss: torch.Tensor = self.criterion(outputs, labels.long())
-        l1_penalty = torch.norm(next(self.model.parameters()), p=1)
-        loss = loss + self.l1_lambda * l1_penalty
+        # l1_penalty = torch.norm(next(self.model.parameters()), p=1)
+        # loss = loss + self.l1_lambda * l1_penalty
         metrics = make_metrics(step, loss, outputs, labels)
         self.log_dict(metrics, prog_bar=True)
         return loss

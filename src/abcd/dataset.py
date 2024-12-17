@@ -12,18 +12,17 @@ from abcd.config import Config
 
 def make_tensor_dataset(cfg: Config, dataset: pl.DataFrame):
     data = []
-    propensity_name = "acs_raked_propensity_score"
     for df in dataset.partition_by(
         cfg.index.sample_id, maintain_order=True, include_key=False
     ):
         labels = df.select(cfg.index.label).to_torch(dtype=pl.Float32)
-        exclude = pl.exclude(cfg.index.split, cfg.index.label, propensity_name)
+        exclude = pl.exclude(cfg.index.split, cfg.index.label, cfg.index.propensity)
         subject = df.select(exclude)
         features = subject.to_torch(dtype=pl.Float32)
 
         sample = [features, labels]
         if cfg.experiment.analysis == "propensity":
-            propensity = df.select(propensity_name).to_torch(dtype=pl.Float32)
+            propensity = df.select(cfg.index.propensity).to_torch(dtype=pl.Float32)
             sample.append(propensity)
         data.append(tuple(sample))
     return data

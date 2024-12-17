@@ -1,12 +1,12 @@
 random_seed = 42
 device = "cuda"
 fast_dev_run = false
-regenerate = true
+regenerate = false
 tune = false
 log = false
 predict = false
 evaluate = false
-importance = false
+importance = true
 plot = false
 tables = false
 verbose = false
@@ -18,7 +18,7 @@ event = "eventname"
 label = "y_{t+1}"
 split = "split"
 site = "site_id_l"
-# propensity = "acs_raked_propensity_score"
+propensity = "acs_raked_propensity_score"
 
 [experiment]
 factor_model = "within_event"
@@ -27,8 +27,8 @@ analyses = [
     # "propensity",
     # "site",
     # "mri",
-    # "questions",
-    "questions_mri_all",
+    "questions",
+    # "questions_mri_all",
     # "questions_mri",
     # "questions_symptoms",
     # "symptoms",
@@ -62,10 +62,10 @@ test = 0.1
 
 [dataloader]
 batch_size = 256
-num_workers = 16
+num_workers = 10
 pin_memory = true
 persistent_workers = true
-# multiprocessing_context = "fork"
+multiprocessing_context = "fork"
 
 [tuner]
 n_trials = 128

@@ -20,6 +20,7 @@ class Index(BaseModel):
     label: str
     split: str
     site: str
+    propensity: str
 
 
 class Preprocess(BaseModel):

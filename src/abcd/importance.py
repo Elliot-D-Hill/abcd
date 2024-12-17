@@ -1,4 +1,3 @@
-import time
 from functools import partial
 
 import polars as pl
@@ -67,25 +66,32 @@ def pad_frame(df: pl.DataFrame, sample_id: str) -> pl.DataFrame:
 
 
 def format_shap_values(cfg: Config, data_module: LightningDataModule):
-    metadata = pl.read_excel("data/supplement/tables/supplementary_table_1.xlsx")
+    # metadata = pl.read_excel("data/supplement/tables/supplementary_table_1.xlsx")
+    metadata = pl.read_parquet("data/supplement/tables/supplementary_table_1.parquet")
     features = pl.read_parquet(cfg.filepaths.data.analytic.test)
     features = pad_frame(features, sample_id=cfg.index.sample_id)
-    features = features.drop(["split", "y_{t+1}", "acs_raked_propensity_score"])
+    features = features.drop([cfg.index.split, cfg.index.label, cfg.index.propensity])
     sample_id = features[cfg.index.sample_id]
     columns = features.columns[1:]
-    features = features.unpivot(index=cfg.index.sample_id, value_name="feature_value")
+    features = features.group_by(cfg.index.sample_id).sum()
+    features = features.unpivot(index=cfg.index.join_on, value_name="feature_value")
     shap = make_shap_values(cfg=cfg, data_module=data_module)
-    shap = pl.DataFrame(shap, schema=columns).with_columns(sample_id)
-    shap = shap.unpivot(index=cfg.index.sample_id, value_name="shap_value")
+    shap = (
+        pl.DataFrame(shap, schema=columns)
+        .with_columns(sample_id)
+        .group_by(sample_id)
+        .sum()
+    )
+    shap = shap.unpivot(index=cfg.index.join_on, value_name="shap_value")
     shap = shap.join(features, on=[cfg.index.sample_id, "variable"])
-    shap = shap.join(metadata, on="variable")
     shap = shap.drop_nulls()
+    shap = shap.join(metadata, on="variable")
     shap.write_parquet(cfg.filepaths.data.results.shap_values)
 
 
 def shap_coef(cfg: Config):
     shap = pl.read_parquet(cfg.filepaths.data.results.shap_values)
-    metadata = pl.read_excel("data/supplement/tables/supplementary_table_1.xlsx")
+    metadata = pl.read_parquet("data/supplement/tables/supplementary_table_1.parquet")
     shap = shap.join(metadata, on=["variable", "respondent"])
     data: list[pl.DataFrame] = []
     groups = ["question", "respondent"]
@@ -102,22 +108,20 @@ def shap_coef(cfg: Config):
 
 def group_shap_coef(cfg: Config):
     shap = pl.read_parquet(cfg.filepaths.data.results.shap_values)
-    shap = shap.group_by([cfg.index.sample_id, "dataset", "respondent"]).sum()
-    data: list[pl.DataFrame] = []
     groups = ["dataset", "respondent"]
-    start_time = time.perf_counter()
+    shap = shap.group_by([cfg.index.sample_id] + groups).sum()
+    data: list[pl.DataFrame] = []
     for (dataset, respondent), group in shap.group_by(groups):
         bootstraps = bootstrap_shap_values(group, n_bootstraps=1000)
         bootstraps = bootstraps.with_columns(
             dataset=pl.lit(dataset), respondent=pl.lit(respondent)
         )
         data.append(bootstraps)
-    print((time.perf_counter() - start_time) / 60)
     df = pl.concat(data)
     df.write_parquet(cfg.filepaths.data.results.group_shap_coef)
 
 
 def estimate_importance(cfg: Config, data_module: LightningDataModule):
-    make_shap_values(cfg=cfg, data_module=data_module)
+    format_shap_values(cfg=cfg, data_module=data_module)
     # shap_coef(cfg=cfg)
     group_shap_coef(cfg=cfg)

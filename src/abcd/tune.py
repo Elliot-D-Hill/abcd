@@ -18,7 +18,7 @@ def make_params(trial: optuna.Trial, cfg: Config):
     cfg.model.hidden_dim = trial.suggest_int(**hparams.model.hidden_dim)
     cfg.model.num_layers = trial.suggest_int(**hparams.model.num_layers)
     cfg.model.dropout = trial.suggest_float(**hparams.model.dropout)
-    cfg.model.l1_lambda = trial.suggest_float(**hparams.model.l1_lambda)
+    # cfg.model.l1_lambda = trial.suggest_float(**hparams.model.l1_lambda)
     cfg.optimizer.lr = trial.suggest_float(**hparams.optimizer.lr)
     cfg.optimizer.weight_decay = trial.suggest_float(**hparams.optimizer.weight_decay)
     cfg.trainer.max_epochs = trial.suggest_int(**hparams.trainer.max_epochs)
