@@ -1,7 +1,7 @@
 random_seed = 42
 device = "cuda"
 fast_dev_run = false
-regenerate = true
+regenerate = false
 tune = true
 log = false
 predict = false
@@ -40,7 +40,7 @@ analysis = "questions"
 split_on = "src_subject_id" # sample_id, site_id
 
 [preprocess]
-null_cutoff = 0.5 # 279
+null_cutoff = 0.25 # 279
 columns_to_drop = [
     "_nm",
     "_nt",

@@ -109,7 +109,7 @@ class Transformer(nn.Module):
         x = x + self.positional_embedding(indices)
         out = self.input_fc(x)
         out = self.transformer_encoder(
-            out, mask=mask, src_key_padding_mask=padding_mask
+            out, mask=mask, src_key_padding_mask=padding_mask.bool()
         )
         out = self.output_fc(out)
         return out
