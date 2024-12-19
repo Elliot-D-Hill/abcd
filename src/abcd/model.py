@@ -84,7 +84,9 @@ class Transformer(nn.Module):
         max_seq_len,
     ):
         super().__init__()
-        self.positional_encoding = nn.Parameter(torch.randn(1, max_seq_len, input_dim))
+        self.positional_embedding = nn.Embedding(
+            num_embeddings=max_seq_len, embedding_dim=input_dim, padding_idx=0
+        )
         hidden_dim = num_heads * round(hidden_dim / num_heads)
         self.input_fc = nn.Linear(in_features=input_dim, out_features=hidden_dim)
         encoder_layer = nn.TransformerEncoderLayer(
@@ -101,14 +103,14 @@ class Transformer(nn.Module):
         self.output_fc = nn.Linear(in_features=hidden_dim, out_features=output_dim)
 
     def forward(self, x: torch.Tensor):
-        x = x + self.positional_encoding
         mask = generate_mask(x.size(1)).to(x.device)
         padding_mask = (x == 0.0).all(dim=-1)
+        indices = (~padding_mask).cumsum(dim=1) * (~padding_mask).long()
+        x = x + self.positional_embedding(indices)
         out = self.input_fc(x)
         out = self.transformer_encoder(
             out, mask=mask, src_key_padding_mask=padding_mask
         )
-        out = out.mean(dim=1)
         out = self.output_fc(out)
         return out
 
@@ -116,10 +118,9 @@ class Transformer(nn.Module):
 def make_metrics(step, loss, outputs, labels) -> dict:
     metrics = {f"{step}_loss": loss}
     if step == "val":
-        labels = labels.long()
         auroc_score = multiclass_auroc(
             preds=outputs,
-            target=labels,
+            target=labels.long(),
             num_classes=outputs.shape[-1],
             average="none",
         )
@@ -134,10 +135,9 @@ class Network(LightningModule):
         self.model = make_architecture(cfg=cfg.model)
         reduction = "none" if cfg.experiment.analysis == "propensity" else "mean"
         self.criterion = nn.CrossEntropyLoss(reduction=reduction)
-        self.optimizer = SGD(self.model.parameters(), **cfg.optimizer.dict())
+        self.optimizer = SGD(self.model.parameters(), **cfg.optimizer.model_dump())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
         self.propensity = cfg.experiment.analysis == "propensity"
-        # self.l1_lambda = cfg.model.l1_lambda
 
     def forward(self, inputs):
         return self.model(inputs)
@@ -148,9 +148,10 @@ class Network(LightningModule):
         is_not_nan = ~torch.isnan(labels).flatten()
         outputs = outputs.flatten(0, 1)[is_not_nan]
         labels = labels.flatten()[is_not_nan]
-        loss: torch.Tensor = self.criterion(outputs, labels.long())
-        # l1_penalty = torch.norm(next(self.model.parameters()), p=1)
-        # loss = loss + self.l1_lambda * l1_penalty
+        loss: torch.Tensor = self.criterion(outputs, labels)  # .long()
+        if loss.isnan().any():
+            print("Loss is NaN")
+            exit()
         metrics = make_metrics(step, loss, outputs, labels)
         self.log_dict(metrics, prog_bar=True)
         return loss
@@ -163,7 +164,7 @@ class Network(LightningModule):
         labels = labels.flatten()[is_not_nan]
         loss: torch.Tensor = self.criterion(outputs, labels.long())
         propensity = propensity.flatten()[is_not_nan]
-        loss = loss * (1 / (propensity + 1e-7))
+        loss = loss * (1 / (propensity + 1e-6))
         loss = loss.mean()
         metrics = make_metrics(step, loss, outputs, labels)
         self.log_dict(metrics, prog_bar=True)
@@ -237,17 +238,19 @@ def make_architecture(cfg: Model):
     hparams = cfg.dict(exclude={"method", "l1_lambda"})
     sequence_model = partial(SequenceModel, **hparams)
     match cfg.method:
+        case "linear":
+            return nn.Linear(in_features=cfg.input_dim, out_features=cfg.output_dim)
+        case "mlp":
+            return MultiLayerPerceptron(**hparams)
         case "rnn":
             return sequence_model(method=nn.RNN)
         case "lstm":
             return sequence_model(method=nn.LSTM)
         case "transformer":
             return Transformer(
-                num_heads=4, max_seq_len=2, **hparams
+                num_heads=4, max_seq_len=4, **hparams
             )  # FIXME: max_seq_len
-        case "mlp":
-            return MultiLayerPerceptron(**hparams)
         case _:
             raise ValueError(
-                f"Invalid method '{cfg.method}'. Choose from: 'rnn', 'lstm', 'mlp', 'moe', or 'transformer'"
+                f"Invalid method '{cfg.method}'. Choose from: 'rnn', 'lstm', 'mlp', or 'transformer'"
             )

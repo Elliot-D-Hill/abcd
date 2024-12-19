@@ -3,7 +3,7 @@ from itertools import product
 import polars as pl
 import polars.selectors as cs
 
-from abcd.config import Config, get_config
+from abcd.config import Config
 from abcd.constants import GROUP_ORDER, RISK_GROUPS
 
 
@@ -188,8 +188,3 @@ def make_tables(cfg: Config):
     # aces.write_excel("data/supplement/tables/supplementary_table_2.xlsx")
     metric_table.write_excel("data/supplement/tables/supplementary_table_3.xlsx")
     shap_table.write_excel("data/supplement/tables/supplementary_table_4.xlsx")
-
-
-if __name__ == "__main__":
-    cfg = get_config(factor_model="within_event")
-    make_tables(cfg)

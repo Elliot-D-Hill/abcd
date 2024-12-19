@@ -41,19 +41,27 @@ def apply_transformer(df: pl.DataFrame, cfg: Config) -> pl.DataFrame:
         transformed_group = transformer.transform(event)  # type: ignore
         dfs.append(transformed_group)
     df = pl.concat(dfs)
-    df = df.rename({"factoranalysis0": "y_t"})
+    df = df.rename({"factoranalysis0": cfg.index.previous_label})
     return df
 
 
-def shift_y(df: pl.LazyFrame, cfg: Config) -> pl.LazyFrame:
-    shift = pl.col("y_t").shift(-1).over("src_subject_id").alias("y_{t+1}")
-    events = pl.Enum(EVENTS)
+def shift_y(df: pl.DataFrame, cfg: Config) -> pl.DataFrame:
+    shift = (
+        pl.col(cfg.index.previous_label)
+        .shift(-1)
+        .over(cfg.index.sample_id)
+        .alias("y_{t+1}")
+    )
     df = (
-        df.sort(cfg.index.sample_id, pl.col(cfg.index.event).cast(events))
+        df.sort(cfg.index.sample_id, pl.col(cfg.index.event).cast(pl.Enum(EVENTS)))
         .with_columns(shift)
+        .select(
+            cfg.index.split,
+            *cfg.index.join_on,
+            cfg.index.previous_label,
+            cfg.index.label,
+        )
         .drop_nulls()
-        .select(cfg.index.split, *cfg.index.join_on, "y_t", cfg.index.label)
-        .with_columns(cs.numeric().shrink_dtype())
     )
     return df
 
@@ -66,9 +74,13 @@ def make_labels(cfg: Config) -> pl.LazyFrame:
     df = (
         pl.scan_csv(cfg.filepaths.data.raw.labels)
         .select(columns)
-        .filter(pl.col(cfg.index.event).is_in(EVENTS))
+        .sort(cfg.index.sample_id, pl.col(cfg.index.event).cast(pl.Enum(EVENTS)))
     )
-    df = df.join(sites, on=cfg.index.join_on, how="inner")
+    df = (
+        df.join(sites, on=cfg.index.join_on, how="left")
+        .sort(cfg.index.sample_id, pl.col(cfg.index.event).cast(pl.Enum(EVENTS)))
+        .with_columns(pl.col(cfg.index.site).forward_fill().over(cfg.index.sample_id))
+    )
     df = assign_splits(
         frame=df,
         splits=cfg.preprocess.splits,
@@ -76,6 +88,6 @@ def make_labels(cfg: Config) -> pl.LazyFrame:
         name=cfg.index.split,
     )
     df = filter_null_rows(frame=df, columns=cs.by_name(cfg.features.mh_p_cbcl.columns))
-    df = apply_transformer(df=df.collect(), cfg=cfg).lazy()
+    df = apply_transformer(df=df.collect(), cfg=cfg)
     df = shift_y(df=df, cfg=cfg)
-    return df
+    return df.lazy()

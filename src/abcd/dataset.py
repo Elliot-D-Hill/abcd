@@ -12,25 +12,26 @@ from abcd.config import Config
 
 def make_tensor_dataset(cfg: Config, dataset: pl.DataFrame):
     data = []
+    features = pl.exclude(cfg.index.split, cfg.index.label, cfg.index.propensity)
     for df in dataset.partition_by(
         cfg.index.sample_id, maintain_order=True, include_key=False
     ):
         labels = df.select(cfg.index.label).to_torch(dtype=pl.Float32)
-        exclude = pl.exclude(cfg.index.split, cfg.index.label, cfg.index.propensity)
-        subject = df.select(exclude)
-        features = subject.to_torch(dtype=pl.Float32)
-
-        sample = [features, labels]
+        subject = df.select(features)
+        inputs = subject.to_torch(dtype=pl.Float32)
         if cfg.experiment.analysis == "propensity":
             propensity = df.select(cfg.index.propensity).to_torch(dtype=pl.Float32)
-            sample.append(propensity)
-        data.append(tuple(sample))
-    return data
+            sample = (inputs, labels, propensity)
+        else:
+            sample = (inputs, labels)
+        data.append(sample)
+    feature_columns = df.select(features).columns
+    return data, feature_columns
 
 
 class TimeSeriesDataset(Dataset):
     def __init__(self, cfg: Config, data: pl.DataFrame) -> None:
-        self.dataset = make_tensor_dataset(cfg=cfg, dataset=data)
+        self.dataset, self.columns = make_tensor_dataset(cfg=cfg, dataset=data)
 
     def __len__(self):
         return len(self.dataset)
@@ -42,7 +43,7 @@ class TimeSeriesDataset(Dataset):
 
 class PropensityDataset(Dataset):
     def __init__(self, cfg: Config, data: pl.DataFrame) -> None:
-        self.dataset = make_tensor_dataset(cfg=cfg, dataset=data)
+        self.dataset, self.columns = make_tensor_dataset(cfg=cfg, dataset=data)
 
     def __len__(self):
         return len(self.dataset)
@@ -114,11 +115,15 @@ class ABCDDataModule(LightningDataModule):
         self.test = test
         self.loader = partial(
             DataLoader,
-            **cfg.dataloader.dict(),
+            **cfg.dataloader.model_dump(),
             collate_fn=propensity_collate_fn
             if cfg.experiment.analysis == "propensity"
             else collate_fn,
         )
+        if not isinstance(train, FileDataset):
+            self.columns = train.columns
+        else:
+            self.columns = []
 
     def train_dataloader(self):
         return self.loader(self.train, shuffle=True, drop_last=True)

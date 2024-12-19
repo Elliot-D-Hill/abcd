@@ -18,13 +18,13 @@ class Index(BaseModel):
     sample_id: str
     event: str
     label: str
+    previous_label: str
     split: str
     site: str
     propensity: str
 
 
 class Preprocess(BaseModel):
-    n_neighbors: int
     null_cutoff: float
     columns_to_drop: list[str]
     splits: dict[str, float]
@@ -68,7 +68,7 @@ class Model(BaseModel):
     dropout: float
     l1_lambda: float
     output_dim: int
-    input_dim: int | None = None
+    input_dim: int = -1  # set at runtime
 
 
 class ModelHParams(BaseModel):
@@ -137,6 +137,7 @@ class Results(BaseModel):
     logs: Path
     predictions: Path
     shap_values: Path
+    group_shap_values: Path
     shap_coef: Path
     group_shap_coef: Path
 

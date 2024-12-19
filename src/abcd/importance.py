@@ -3,12 +3,11 @@ from functools import partial
 import polars as pl
 import torch
 from captum.attr import GradientShap
-from lightning import LightningDataModule
 from sklearn.linear_model import LinearRegression
-from sklearn.pipeline import make_pipeline
 from sklearn.utils import resample
 
 from abcd.config import Config
+from abcd.dataset import ABCDDataModule
 from abcd.tune import get_model
 
 
@@ -19,7 +18,7 @@ def predict(x, model):
     return output
 
 
-def make_shap_values(cfg: Config, data_module: LightningDataModule):
+def make_shap_values(cfg: Config, data_module: ABCDDataModule):
     model = get_model(cfg, best=True)
     test_batches = data_module.test_dataloader()
     val_batches = data_module.val_dataloader()
@@ -31,18 +30,15 @@ def make_shap_values(cfg: Config, data_module: LightningDataModule):
     f = partial(predict, model=model)
     explainer = GradientShap(f)
     shap_values = explainer.attribute(inputs, background)
-    return shap_values.flatten(0, 1).cpu().numpy()
+    inputs = inputs.flatten(0, 1).cpu().numpy()
+    shap_values = shap_values.flatten(0, 1).cpu().numpy()
+    return shap_values, inputs
 
 
 def regress_shap_values(df: pl.DataFrame):
     x = df.select("feature_value").to_numpy()
     y = df.select("shap_value").to_numpy()
-    return (
-        make_pipeline(LinearRegression())
-        .fit(x, y)
-        .named_steps["linearregression"]
-        .coef_.item()
-    )
+    return LinearRegression().fit(x, y).coef_.item()
 
 
 def bootstrap_shap_values(df: pl.DataFrame, n_bootstraps: int):
@@ -54,39 +50,26 @@ def bootstrap_shap_values(df: pl.DataFrame, n_bootstraps: int):
     return pl.DataFrame(data)
 
 
-def pad_frame(df: pl.DataFrame, sample_id: str) -> pl.DataFrame:
-    dfs = []
-    max_len: int = df.group_by(sample_id).agg(pl.len())["len"].max()  # type: ignore
-    for group in df.partition_by(sample_id, maintain_order=True):
-        padding_length = max_len - group.height
-        padding = pl.DataFrame({col: [None] * padding_length for col in df.columns})
-        group = group.vstack(padding)
-        dfs.append(group)
-    return pl.concat(dfs)
-
-
-def format_shap_values(cfg: Config, data_module: LightningDataModule):
+def format_shap_values(shap_values, inputs, cfg: Config, columns: list[str]):
     # metadata = pl.read_excel("data/supplement/tables/supplementary_table_1.xlsx")
     metadata = pl.read_parquet("data/supplement/tables/supplementary_table_1.parquet")
-    features = pl.read_parquet(cfg.filepaths.data.analytic.test)
-    features = pad_frame(features, sample_id=cfg.index.sample_id)
-    features = features.drop([cfg.index.split, cfg.index.label, cfg.index.propensity])
-    sample_id = features[cfg.index.sample_id]
-    columns = features.columns[1:]
-    features = features.group_by(cfg.index.sample_id).sum()
-    features = features.unpivot(index=cfg.index.join_on, value_name="feature_value")
-    shap = make_shap_values(cfg=cfg, data_module=data_module)
-    shap = (
-        pl.DataFrame(shap, schema=columns)
-        .with_columns(sample_id)
-        .group_by(sample_id)
-        .sum()
-    )
-    shap = shap.unpivot(index=cfg.index.join_on, value_name="shap_value")
-    shap = shap.join(features, on=[cfg.index.sample_id, "variable"])
+    # metadata.write_excel("data/supplement/tables/supplementary_table_1.xlsx")
+    shap = pl.DataFrame(shap_values, schema=columns)
+    inputs = pl.DataFrame(inputs, schema=columns)
+    shap = shap.unpivot(index=cfg.index.sample_id, value_name="shap_value")
+    inputs = inputs.unpivot(index=cfg.index.sample_id, value_name="feature_value")
+    shap = shap.with_columns(inputs["feature_value"])
     shap = shap.drop_nulls()
     shap = shap.join(metadata, on="variable")
     shap.write_parquet(cfg.filepaths.data.results.shap_values)
+
+
+def group_shap_values(groups: list[str], cfg: Config):
+    df = pl.read_parquet(cfg.filepaths.data.results.shap_values)
+    df = df.group_by(cfg.index.sample_id, *groups).agg(
+        pl.col("shap_value", "feature_value").sum()
+    )
+    df.write_parquet(cfg.filepaths.data.results.group_shap_values)
 
 
 def shap_coef(cfg: Config):
@@ -106,10 +89,9 @@ def shap_coef(cfg: Config):
     df.write_parquet(cfg.filepaths.data.results.shap_coef)
 
 
-def group_shap_coef(cfg: Config):
+def group_shap_coef(groups: list[str], cfg: Config):
     shap = pl.read_parquet(cfg.filepaths.data.results.shap_values)
-    groups = ["dataset", "respondent"]
-    shap = shap.group_by([cfg.index.sample_id] + groups).sum()
+    shap = shap.group_by(cfg.index.sample_id, *groups).sum()
     data: list[pl.DataFrame] = []
     for (dataset, respondent), group in shap.group_by(groups):
         bootstraps = bootstrap_shap_values(group, n_bootstraps=1000)
@@ -121,7 +103,24 @@ def group_shap_coef(cfg: Config):
     df.write_parquet(cfg.filepaths.data.results.group_shap_coef)
 
 
-def estimate_importance(cfg: Config, data_module: LightningDataModule):
-    format_shap_values(cfg=cfg, data_module=data_module)
-    # shap_coef(cfg=cfg)
-    group_shap_coef(cfg=cfg)
+def summed_group_shap_coef(groups: list[str], cfg: Config):
+    shap = pl.read_parquet(cfg.filepaths.data.results.shap_values)
+    shap = shap.group_by(cfg.index.sample_id, *groups).sum()
+    data: list[pl.DataFrame] = []
+    for (dataset, respondent), group in shap.group_by(groups):
+        bootstraps = bootstrap_shap_values(group, n_bootstraps=1000)
+        bootstraps = bootstraps.with_columns(
+            dataset=pl.lit(dataset), respondent=pl.lit(respondent)
+        )
+        data.append(bootstraps)
+    df = pl.concat(data)
+    df.write_parquet(cfg.filepaths.data.results.group_shap_coef)
+
+
+def estimate_importance(cfg: Config, data_module: ABCDDataModule):
+    shap_values, inputs = make_shap_values(cfg=cfg, data_module=data_module)
+    format_shap_values(shap_values, inputs, cfg=cfg, columns=data_module.columns)
+    shap_coef(cfg=cfg)
+    groups = ["dataset", "respondent"]
+    group_shap_values(groups=groups, cfg=cfg)
+    group_shap_coef(groups=groups, cfg=cfg)

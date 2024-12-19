@@ -6,7 +6,7 @@ import polars as pl
 import polars.selectors as cs
 from nanook.frame import join_dataframes
 from nanook.preprocess import drop_null_columns, filter_null_rows
-from nanook.transform import impute, pipeline, standardize
+from nanook.transform import standardize
 
 from abcd.config import Config
 from abcd.constants import EVENTS, EVENTS_TO_VALUES
@@ -51,7 +51,7 @@ def get_datasets(cfg: Config) -> list[pl.LazyFrame]:
     transforms["led_l_adi"] = make_adi
     transforms["abcd_p_demo"] = make_demographics
     dfs = []
-    files = cfg.features.dict().items()
+    files = cfg.features.model_dump().items()
     for filename, metadata in files:
         df = pl.scan_csv(
             source=cfg.filepaths.data.raw.features / f"{filename}.csv",
@@ -62,7 +62,9 @@ def get_datasets(cfg: Config) -> list[pl.LazyFrame]:
         columns = select_columns(metadata=metadata, cfg=cfg)
         df = (
             df.select(columns)
-            .with_columns(pl.all().replace({777: None, 999: None}))
+            .with_columns(
+                pl.all().replace({777: None, 999: None, 777.0: None, 999.0: None})
+            )
             .pipe(transforms[filename])
             .filter(pl.col(cfg.index.event).is_in(EVENTS))
             .pipe(filter_null_rows, columns=cs.numeric())
@@ -84,7 +86,7 @@ def get_mri_datasets(cfg: Config) -> list[pl.LazyFrame]:
             n_rows=2000 if cfg.fast_dev_run else None,
         )
         df = df.filter(pl.col(cfg.index.event).is_in(EVENTS))
-        # df = df.pipe(drop_null_columns, cutoff=cfg.preprocess.null_cutoff)
+        df = drop_null_columns(df, cutoff=cfg.preprocess.null_cutoff)
         df = df.with_columns(cs.numeric().shrink_dtype())
         dfs.append(df)
     return dfs
@@ -112,7 +114,7 @@ def get_brain_features(cfg: Config):
     }
     return [
         column
-        for name, features in cfg.features.dict().items()
+        for name, features in cfg.features.model_dump().items()
         for column in features["columns"]
         if name in brain_datasets
     ]
@@ -121,8 +123,6 @@ def get_brain_features(cfg: Config):
 def get_features(cfg: Config) -> pl.Expr:
     brain_features = get_brain_features(cfg)
     match cfg.experiment.analysis:
-        case "metadata":
-            selection = cs.all()
         case "mri":
             selection = cs.all()
         case "questions_mri":
@@ -144,36 +144,44 @@ def get_features(cfg: Config) -> pl.Expr:
 def collect_datasets(cfg: Config) -> pl.LazyFrame:
     datasets = get_data(cfg=cfg)
     df = join_dataframes(frames=datasets, on=cfg.index.join_on, how="left")
+    df = df.with_columns(
+        pl.col(cfg.index.event).replace_strict(EVENTS_TO_VALUES, default=None),
+    )
     features = get_features(cfg=cfg)
     df = df.select(features).drop_nulls(cfg.index.event)
     return df
 
 
+def mean_median_imputation(expr: pl.Expr, train: pl.Expr, id: str) -> pl.Expr:
+    mean_median = (
+        train.median().over(id).add(train.median()).truediv(2).fill_null(train.median())
+    )
+    return expr.fill_null(mean_median)
+
+
 def transform_dataset(cfg: Config) -> pl.LazyFrame:
     df = collect_datasets(cfg=cfg)
-    label_columns = cs.by_name(cfg.index.split, *cfg.index.join_on, cfg.index.label)
     metadata = pl.scan_parquet(cfg.filepaths.data.processed.metadata)
-    labels = metadata.select(label_columns)
-    df = labels.join(df, on=cfg.index.join_on, how="inner")
-    columns = cs.numeric().exclude(cfg.index.label, cfg.index.propensity)
+    index_columns = cfg.index.join_on + [
+        cfg.index.split,
+        cfg.index.label,
+        cfg.index.propensity,
+    ]
+    labels = metadata.select(index_columns).drop(cfg.index.propensity)
+    df = labels.join(df, on=cfg.index.join_on, how="inner").sort(cfg.index.join_on)
+    df.collect().write_parquet("data/temp.parquet")
+    columns = cs.numeric().exclude(index_columns)
     train = columns.filter(pl.col(cfg.index.split).eq("train"))
+    # imputation = impute(columns, method="median", train=train)
+    imputation = mean_median_imputation(columns, train=train, id=cfg.index.sample_id)
+    df = df.with_columns(imputation)
     scale = standardize(columns, method="zscore", train=train)
-    imputation = impute(columns, method="median", train=train)
-    transforms = [scale, imputation]
-    df = pipeline(df, transforms, over=cfg.index.event)
-    df = df.with_columns(
-        pl.all()
-        .fill_null(strategy="forward")
-        .over(cfg.index.sample_id)
-        .fill_null(strategy="mean")
-    )
-    df = (
-        df.with_columns(
-            pl.col(cfg.index.event).replace_strict(EVENTS_TO_VALUES, default=None),
-        )
-        .select(label_columns, cs.exclude(label_columns))
-        .drop(cs.string() & ~cs.by_name(cfg.index.split, cfg.index.sample_id))
-    )
+    df = df.with_columns(scale)
+    df = df.sort(cfg.index.join_on)
+    df = df.select(pl.col(index_columns), pl.exclude(index_columns))
+    df = df.drop(cs.string() & ~cs.by_name([cfg.index.split] + cfg.index.join_on))
+    df.collect().write_parquet("data/temp.parquet")
+    # print(df.select(pl.selectors.numeric()).max().unpivot().sort("value").collect())
     return df
 
 

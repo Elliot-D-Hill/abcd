@@ -1,8 +1,8 @@
 random_seed = 42
 device = "cuda"
 fast_dev_run = false
-regenerate = false
-tune = false
+regenerate = true
+tune = true
 log = false
 predict = false
 evaluate = false
@@ -16,6 +16,7 @@ join_on = ["src_subject_id", "eventname"]
 sample_id = "src_subject_id"
 event = "eventname"
 label = "y_{t+1}"
+previous_label = "y_t"
 split = "split"
 site = "site_id_l"
 propensity = "acs_raked_propensity_score"
@@ -39,8 +40,7 @@ analysis = "questions"
 split_on = "src_subject_id" # sample_id, site_id
 
 [preprocess]
-n_neighbors = 5
-null_cutoff = 0.25
+null_cutoff = 0.5 # 279
 columns_to_drop = [
     "_nm",
     "_nt",
@@ -53,7 +53,9 @@ columns_to_drop = [
     "_mean",
     "sds_",
     "srpf_",
-    "_fc",
+    "ss_fc",
+    "stq_y_ss_week",
+    "fes_p_ss_",
 ]
 [preprocess.splits]
 train = 0.8
@@ -73,8 +75,8 @@ n_trials = 128
 [trainer]
 gradient_clip_val = 1.0
 max_epochs = 100
-enable_progress_bar = false
-enable_model_summary = false
+enable_progress_bar = true
+enable_model_summary = true
 
 [optimizer]
 nesterov = true
@@ -102,7 +104,7 @@ high = 1e-2
 log = true
 [hyperparameters.optimizer.weight_decay]
 name = "weight_decay"
-low = 1e-7
+low = 1e-9
 high = 1e-1
 log = true
 [hyperparameters.optimizer.momentum]
@@ -112,14 +114,14 @@ high = 0.99
 [hyperparameters.model.method]
 name = "method"
 low = 0
-high = 2
+high = 4
 [hyperparameters.model.hidden_dim]
 name = "hidden_dim"
 low = 64
-high = 128
+high = 512
 [hyperparameters.model.dropout]
 name = "dropout"
-low = 0.3
+low = 0.0
 high = 0.90
 [hyperparameters.model.l1_lambda]
 name = "l1_lambda"
@@ -168,6 +170,7 @@ study = "study.pkl"
 logs = "lightning_logs/"
 predictions = "predictions.parquet"
 shap_values = "shap_values.parquet"
+group_shap_values = "group_shap_values.parquet"
 shap_coef = "shap_coef.parquet"
 group_shap_coef = "group_shap_coef.parquet"
 
@@ -213,11 +216,11 @@ name = "Adverse childhood experiences (ACEs)"
 respondent = "Parent"                         # TODO check if this is from parent, youth, or both
 columns = ["total_core"]
 [features.ce_p_fes]
-name = "Family environment"
+name = "Family conflict"
 respondent = "Parent"
 columns = []
 [features.ce_y_fes]
-name = "Family environment"
+name = "Family conflict"
 respondent = "Youth"
 columns = []
 [features.ce_p_nsc]
@@ -229,7 +232,7 @@ name = "Neighborhood safety"
 respondent = "Youth"
 columns = []
 [features.ce_y_pm]
-name = "Problem monitoring"
+name = "Parental monitoring"
 respondent = "Youth"
 columns = []
 [features.ce_p_psb]

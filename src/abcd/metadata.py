@@ -3,17 +3,24 @@ import polars.selectors as cs
 from nanook.frame import join_dataframes
 
 from abcd.config import Config
-from abcd.constants import COLUMNS, EVENTS_TO_NAMES, RACE_MAPPING, SEX_MAPPING
+from abcd.constants import (
+    COLUMNS,
+    EVENTS,
+    EVENTS_TO_NAMES,
+    EVENTS_TO_VALUES,
+    RACE_MAPPING,
+    SEX_MAPPING,
+)
 from abcd.labels import make_labels
 from abcd.process import get_datasets
 
 
-def make_subject_metadata(df: pl.LazyFrame) -> pl.LazyFrame:
+def make_subject_metadata(cfg: Config, df: pl.LazyFrame) -> pl.LazyFrame:
     sex = pl.col("demo_sex_v2").replace_strict(SEX_MAPPING, default=None)
     race = pl.col("race_ethnicity").replace_strict(RACE_MAPPING, default=None)
     age = pl.col("interview_age").truediv(12).round(0)
     quartiles = ["1", "2", "3", "4"]
-    adi = pl.col("adi_percentile").qcut(quantiles=4, labels=quartiles)
+    adi = pl.col("adi_percentile").qcut(quantiles=4, labels=quartiles).cast(pl.Int32)
     year = (
         pl.col("interview_date")
         .cast(pl.String)
@@ -22,15 +29,10 @@ def make_subject_metadata(df: pl.LazyFrame) -> pl.LazyFrame:
     )
     df = (
         df.with_columns(sex, race, age, adi, year)
-        .with_columns(cs.numeric().cast(pl.Int32))
+        .sort(cfg.index.sample_id, pl.col(cfg.index.event).cast(pl.Enum(EVENTS)))
         .with_columns(
-            pl.col(
-                "demo_sex_v2",
-                "race_ethnicity",
-                "adi_percentile",
-                "parent_highest_education",
-                "demo_comb_income_v2",
-            )
+            cs.numeric()
+            .cast(pl.Int32)
             .fill_null(strategy="forward")
             .over("src_subject_id")
         )
@@ -45,9 +47,12 @@ def make_metadata(cfg: Config) -> None:
     dfs = get_datasets(cfg=cfg)
     make_variable_metadata(cfg=cfg, dfs=dfs)
     df = join_dataframes(frames=dfs, on=cfg.index.join_on, how="left")
-    df = make_subject_metadata(df=df)
+    df = make_subject_metadata(cfg=cfg, df=df)
     labels = make_labels(cfg=cfg)
     df = labels.join(df, on=cfg.index.join_on, how="left").select(COLUMNS.keys())
+    df = df.with_columns(
+        pl.col(cfg.index.event).replace_strict(EVENTS_TO_VALUES, default=None)
+    )
     df.collect().write_parquet(cfg.filepaths.data.processed.metadata)
     df = df.with_columns(
         pl.col(cfg.index.event).replace_strict(EVENTS_TO_NAMES, default=None)

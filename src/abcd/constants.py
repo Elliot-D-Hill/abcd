@@ -5,8 +5,10 @@ EVENTS = [
     "1_year_follow_up_y_arm_1",
     "2_year_follow_up_y_arm_1",
     "3_year_follow_up_y_arm_1",
+    "4_year_follow_up_y_arm_1",
 ]
-EVENTS_TO_VALUES = dict(zip(EVENTS, range(len(EVENTS))))
+EVENT_VALUES = range(len(EVENTS))
+EVENTS_TO_VALUES = dict(zip(EVENTS, EVENT_VALUES))
 RACE_MAPPING = {1: "White", 2: "Black", 3: "Hispanic", 4: "Asian", 5: "Other"}
 SEX_MAPPING = {0: "Female", 1: "Male"}
 COLUMNS = {
@@ -15,6 +17,8 @@ COLUMNS = {
     "eventname": "Follow-up event",
     "y_t": "Quartile at t",
     "y_{t+1}": "Quartile at t+1",
+    "site_id_l": "Site",
+    "acs_raked_propensity_score": "Propensity",
     "demo_sex_v2": "Sex",
     "race_ethnicity": "Race",
     "interview_age": "Age",
@@ -24,7 +28,7 @@ COLUMNS = {
     "demo_comb_income_v2": "Combined income",
 }
 EVENT_NAMES = ["Baseline", "1-year", "2-year", "3-year"]
-EVENTS_TO_NAMES = dict(zip(EVENTS, EVENT_NAMES))
+EVENTS_TO_NAMES = dict(zip(EVENT_VALUES, EVENT_NAMES))
 GROUP_ORDER = pl.Enum(
     [
         "Conversion",
