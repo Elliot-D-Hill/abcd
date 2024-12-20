@@ -63,7 +63,6 @@ def quartile_curves():
                 color="black",
             )
         ax.set_ylim(0.0, 1.05)
-    # sns.despine()
     plt.subplots_adjust(hspace=0.3)  # , wspace=0.4
     plt.savefig(f"data/figures/figure_1.{FORMAT}", format=FORMAT)
 
@@ -93,7 +92,6 @@ def analysis_comparison():
     g.set_titles("{col_name}")
     g.set(ylim=(0.5, 1.0))
     g.set_axis_labels("Risk", "AUROC")
-    # sns.despine()
     plt.savefig(
         f"data/supplement/figures/supplementary_figure_1.{FORMAT}",
         format=FORMAT,
@@ -103,8 +101,7 @@ def analysis_comparison():
 
 def shap_plot(
     filepath: str,
-    analysis: str,
-    factor_model: str,
+    shap_path: Path,
     textwrap_width: int,
     y_axis_label: str,
     figsize: tuple[int, int],
@@ -124,10 +121,7 @@ def shap_plot(
     cbcl_names = {
         k + " cbcl syndrome scale (t-score)": v for k, v in cbcl_names.items()
     }
-    sns.set_theme(style="darkgrid", palette="deep", font_scale=1.6)
-    df = pl.read_csv(
-        f"data/analyses/{factor_model}/{analysis}/results/shap_values.csv"
-    ).with_columns(
+    df = pl.read_parquet(shap_path).with_columns(
         (pl.col("Respondent") + ": " + pl.col("dataset")).alias("Dataset"),
         pl.col("question").replace(cbcl_names),
     )
@@ -169,7 +163,6 @@ def shap_plot(
     ]
     g.set_yticklabels(labels)
     g.yaxis.grid(True)
-    # sns.despine()
     plt.axvline(x=0, color="black", linestyle="--")
     plt.tight_layout()
     plt.savefig(f"{filepath}.{FORMAT}", format=FORMAT)
@@ -206,7 +199,6 @@ def p_factor_model_comparison():
     g.set_axis_labels("Risk group", "AUROC")
     for ax in g.axes.flat:
         ax.axhline(0.5, color="black", linestyle="--")
-    # sns.despine()
     plt.savefig(
         f"data/supplement/figures/supplementary_figure_4.{FORMAT}",
         format=FORMAT,
@@ -243,15 +235,15 @@ def shap_scatter(filepath: Path):
     for ax, col_name in zip(g.axes.flat, g.col_names):
         ax.set_xlabel(col_name)
     plt.savefig(
-        f"data/supplement/figures/supplementary_figure_5.{FORMAT}",
+        f"data/supplement/figures/supplementary_figure_6.{FORMAT}",
         format=FORMAT,
         bbox_inches="tight",
     )
 
 
-def group_shap_coef(cfg: Config):
+def group_shap_coef(filepath: Path):
     sns.set_theme(style="darkgrid", font_scale=1.4)
-    df = pl.read_parquet(cfg.filepaths.data.results.group_shap_coef)
+    df = pl.read_parquet(filepath)
     order = (
         df.group_by("dataset")
         .agg(pl.col("coefficient").mean().abs())
@@ -272,29 +264,68 @@ def group_shap_coef(cfg: Config):
     plt.axvline(x=0, color="black", linestyle="--")
     g.set_xlabel("SHAP coefficient")
     g.set_ylabel("Predictor category")
+    plt.savefig(
+        f"data/supplement/figures/supplementary_figure_5.{FORMAT}",
+        format=FORMAT,
+        bbox_inches="tight",
+    )
+
+
+def abs_shap_sum(filepath: Path):
+    df = pl.read_parquet(filepath)
+    order = (
+        df.group_by("dataset")
+        .agg(pl.col("shap_value").sum().abs())
+        .sort("shap_value", descending=True)["dataset"]
+        .to_list()
+    )
+    dfs = []
+    for _ in range(1000):
+        resampled = df.sample(fraction=1, with_replacement=True)
+        resampled = resampled.group_by(["dataset", "respondent"]).agg(
+            pl.col("shap_value").sum().abs()
+        )
+        dfs.append(resampled)
+    df = pl.concat(dfs)
+    g = sns.pointplot(
+        data=df,
+        x="shap_value",
+        y="dataset",
+        hue="respondent",
+        linestyles="none",
+        order=order,
+        errorbar="pi",
+    )
+    g.set(ylabel="Predictor category", xlabel="Absolute SHAP value sum")
+    plt.legend(title="Respondent")
+    g.yaxis.grid(True)
+    plt.axvline(x=0, color="black", linestyle="--")
+    plt.tight_layout()
+    sns.move_legend(g, "lower right")
     plt.savefig(f"data/figures/figure_2.{FORMAT}", format=FORMAT, bbox_inches="tight")
 
 
-def plot(cfg):
-    sns.set_theme(context="paper", style="darkgrid", palette="deep", font_scale=1.4)
+def plot(cfg: Config):
+    sns.set_theme(context="paper", style="darkgrid", palette="deep", font_scale=1.5)
 
     # quartile_curves()
-    group_shap_coef(cfg=cfg)
     # analysis_comparison()
-    # shap_plot(
-    #     filepath="data/supplement/figures/supplementary_figure_2",
-    #     analysis="symptoms",
-    #     factor_model="within_event",
-    #     textwrap_width=75,
-    #     y_axis_label="CBCL syndrome scale (t-score)",
-    #     figsize=(16, 8),
-    # )
-    # shap_plot(
-    #     filepath="data/supplement/figures/supplementary_figure_3",
-    #     analysis="questions",
-    #     factor_model="within_event",
-    #     textwrap_width=75,
-    #     y_axis_label="Question",
-    #     figsize=(24, 16),
-    # )
+
+    abs_shap_sum(filepath=cfg.filepaths.data.results.shap_values)
+    group_shap_coef(filepath=cfg.filepaths.data.results.group_shap_coef)
+    shap_scatter(filepath=cfg.filepaths.data.results.shap_values)
+    shap_plot(
+        filepath="data/supplement/figures/supplementary_figure_2",
+        shap_path=cfg.filepaths.data.results.shap_values,
+        textwrap_width=75,
+        y_axis_label="CBCL syndrome scale (t-score)",
+        figsize=(16, 8),
+    )
+    shap_plot(
+        filepath="data/supplement/figures/supplementary_figure_3",
+        shap_path=cfg.filepaths.data.results.shap_values,
+        textwrap_width=75,
+        y_axis_label="Question",
+        figsize=(24, 16),
+    )
     # p_factor_model_comparison()
