@@ -1,4 +1,5 @@
 import textwrap
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import polars as pl
@@ -174,38 +175,6 @@ def shap_plot(
     plt.savefig(f"{filepath}.{FORMAT}", format=FORMAT)
 
 
-def group_shap_coef(filepath: str, cfg: Config):
-    plt.figure(figsize=(8, 5))
-    df = pl.read_parquet(cfg.filepaths.data.results.group_shap_coef)
-    groups = ["dataset", "respondent"]
-    order = (
-        df.group_by(groups)
-        .agg(pl.col("coefficient").mean().abs())
-        .sort("coefficient", descending=True)["dataset"]
-        .to_list()
-    )
-    g = sns.pointplot(
-        data=df,
-        x="coefficient",
-        y="dataset",
-        hue="respondent",
-        linestyles="none",
-        order=order,
-        errorbar="pi",
-    )
-    sns.despine()
-    g.set_yticks(g.get_yticks())
-    labels = [textwrap.fill(label.get_text(), 36) for label in g.get_yticklabels()]
-    g.set_yticklabels(labels)
-    sns.move_legend(g, "lower left")
-    g.set(ylabel="Predictor category", xlabel="SHAP value coefficient")
-    plt.legend(title="Respondent")
-    g.yaxis.grid(True)
-    plt.axvline(x=0, color="black", linestyle="--")
-    plt.tight_layout()
-    plt.savefig(f"{filepath}.{FORMAT}", format=FORMAT)
-
-
 def p_factor_model_comparison():
     df = pl.read_parquet("data/results/metrics/metrics.parquet")
     df = (
@@ -245,12 +214,72 @@ def p_factor_model_comparison():
     )
 
 
+def shap_scatter(filepath: Path):
+    sns.set_theme(style="darkgrid", font_scale=1.4)
+    df = pl.read_parquet(filepath)
+    # remove one outlier from Family mental health history
+    df = df.filter(pl.col("feature_value") < 30)
+    df = df.filter(pl.col("dataset") != "Follow-up event")
+    order = (
+        df.group_by("dataset")
+        .agg(pl.col("shap_value").sum().abs())
+        .sort("shap_value", descending=True)["dataset"]
+        .to_list()
+    )
+    g = sns.relplot(
+        data=df,
+        x="feature_value",
+        y="shap_value",
+        hue="respondent",
+        col="dataset",
+        col_wrap=4,
+        col_order=order,
+        kind="scatter",
+        alpha=0.5,
+        facet_kws={"sharey": False, "sharex": False},
+    )
+    g.set_titles("")
+    g.set_axis_labels("Predictor value", "SHAP Value")
+    for ax, col_name in zip(g.axes.flat, g.col_names):
+        ax.set_xlabel(col_name)
+    plt.savefig(
+        f"data/supplement/figures/supplementary_figure_5.{FORMAT}",
+        format=FORMAT,
+        bbox_inches="tight",
+    )
+
+
+def group_shap_coef(cfg: Config):
+    sns.set_theme(style="darkgrid", font_scale=1.4)
+    df = pl.read_parquet(cfg.filepaths.data.results.group_shap_coef)
+    order = (
+        df.group_by("dataset")
+        .agg(pl.col("coefficient").mean().abs())
+        .sort("coefficient", descending=True)["dataset"]
+        .to_list()
+    )
+    g = sns.pointplot(
+        data=df,
+        x="coefficient",
+        y="dataset",
+        hue="respondent",
+        order=order,
+        linestyles="none",
+        errorbar="pi",
+    )
+    plt.legend(title="Respondent")
+    g.yaxis.grid(True)
+    plt.axvline(x=0, color="black", linestyle="--")
+    g.set_xlabel("SHAP coefficient")
+    g.set_ylabel("Predictor category")
+    plt.savefig(f"data/figures/figure_2.{FORMAT}", format=FORMAT, bbox_inches="tight")
+
+
 def plot(cfg):
-    sns.set_theme(style="darkgrid", palette="deep", font_scale=2.0)
-    sns.set_context("paper", font_scale=1.4)
+    sns.set_theme(context="paper", style="darkgrid", palette="deep", font_scale=1.4)
 
     # quartile_curves()
-    group_shap_coef(filepath="data/figures/figure_2", cfg=cfg)
+    group_shap_coef(cfg=cfg)
     # analysis_comparison()
     # shap_plot(
     #     filepath="data/supplement/figures/supplementary_figure_2",

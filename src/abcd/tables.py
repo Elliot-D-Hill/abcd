@@ -1,9 +1,10 @@
 from itertools import product
+from pathlib import Path
 
 import polars as pl
 import polars.selectors as cs
 
-from abcd.config import Config
+from abcd.config import Config, get_config
 from abcd.constants import GROUP_ORDER, RISK_GROUPS
 
 
@@ -143,7 +144,7 @@ def demographic_metric_table(df: pl.DataFrame):
     )
 
 
-def make_shap_table(analysis: str, factor_model: str):
+def make_shap_table(filepath: Path):
     columns = [
         "dataset",
         "table",
@@ -151,17 +152,25 @@ def make_shap_table(analysis: str, factor_model: str):
         "question",
         "response",
     ]
-    df = pl.read_csv(
-        f"data/analyses/{factor_model}/{analysis}/results/shap_values.csv"
-    ).rename({"Respondent": "respondent"})
+    df = pl.read_parquet(filepath)
     df = (
         df.group_by("variable")
         .agg(
             pl.col(columns).first(),
-            pl.col("shap_value").sum().alias("shap_value"),
+            pl.col("shap_value").sum().alias("shap_value_sum"),
         )
-        .sort(pl.col("shap_value").abs(), descending=True)
-    ).select(["variable"] + columns + ["shap_value"])
+        .sort(pl.col("shap_value_sum").abs(), descending=True)
+    ).select(["variable"] + columns + ["shap_value_sum"])
+    return df
+
+
+def tuning_table(cfg: Config):
+    df = pl.read_parquet(cfg.filepaths.data.results.study)
+    df = df.rename(lambda x: x.replace("params_", ""))
+    df = df.rename({"value": "validation_loss"})
+    df = df.drop("number", "datetime_start", "datetime_complete", "duration", "state")
+    df = df.sort("validation_loss")
+    df = df.with_columns(pl.col("method").replace_strict(cfg.tuner.methods))
     return df
 
 
@@ -177,14 +186,18 @@ def make_tables(cfg: Config):
     quartile_metrics = quartile_metric_table(df=metric_table)
     demographic_metrics = demographic_metric_table(df=metric_table)
     variable_metadata = pl.read_csv("data/raw/variable_metadata.csv")
-    # aces = pl.read_excel("data/raw/ABCD_ACEs.xlsx")
-    shap_table = make_shap_table(analysis="questions", factor_model="within_event")
+    aces = pl.read_excel("data/raw/ABCD_ACEs.xlsx")
 
     cross_tab.write_excel("data/tables/table_1.xlsx")
     quartile_metrics.write_excel("data/tables/table_2.xlsx")
     demographic_metrics.write_excel("data/tables/table_3.xlsx")
 
     variable_metadata.write_excel("data/supplement/tables/supplementary_table_1.xlsx")
-    # aces.write_excel("data/supplement/tables/supplementary_table_2.xlsx")
+    aces.write_excel("data/supplement/tables/supplementary_table_2.xlsx")
     metric_table.write_excel("data/supplement/tables/supplementary_table_3.xlsx")
+
+    cfg = get_config("config.toml", analysis="questions", factor_model="within_event")
+    shap_table = make_shap_table(filepath=cfg.filepaths.data.results.shap_values)
+    tune_table = tuning_table(cfg=cfg)
     shap_table.write_excel("data/supplement/tables/supplementary_table_4.xlsx")
+    tune_table.write_excel("data/supplement/tables/supplementary_table_5.xlsx")

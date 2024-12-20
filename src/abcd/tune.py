@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import optuna
 import polars as pl
 from optuna.samplers import QMCSampler, TPESampler
@@ -39,7 +37,7 @@ class Objective:
         cfg = make_params(trial, cfg=self.cfg)
         model = get_model(cfg=cfg)
         trainer = make_trainer(cfg=cfg, checkpoint=True)
-        path = Path(cfg.filepaths.data.results.checkpoints / "last.ckpt")
+        path = cfg.filepaths.data.results.checkpoints / "last.ckpt"
         if path.exists():
             path.unlink()
         trainer.fit(model, datamodule=self.data_module)
@@ -47,7 +45,9 @@ class Objective:
         val_loss = metrics[-1]["val_loss"]
         if val_loss < self.best_val_loss:
             self.best_val_loss = val_loss
-            trainer.save_checkpoint(path.with_name("best.ckpt"))
+            trainer.save_checkpoint(
+                cfg.filepaths.data.results.checkpoints / "best.ckpt"
+            )
         return val_loss
 
 
@@ -62,4 +62,4 @@ def tune_model(cfg: Config, data_module):
     study.sampler = TPESampler(multivariate=True, seed=cfg.random_seed)
     study.optimize(func=objective, n_trials=half_trials)
     df = pl.DataFrame(study.trials_dataframe())
-    df.write_parquet("data/study.parquet")
+    df.write_parquet(cfg.filepaths.data.results.study)
