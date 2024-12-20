@@ -51,7 +51,7 @@ def get_datasets(cfg: Config) -> list[pl.LazyFrame]:
     transforms["led_l_adi"] = make_adi
     transforms["abcd_p_demo"] = make_demographics
     dfs = []
-    files = cfg.features.model_dump().items()
+    files = cfg.features.dict().items()
     for filename, metadata in files:
         df = pl.scan_csv(
             source=cfg.filepaths.data.raw.features / f"{filename}.csv",
@@ -114,7 +114,7 @@ def get_brain_features(cfg: Config):
     }
     return [
         column
-        for name, features in cfg.features.model_dump().items()
+        for name, features in cfg.features.dict().items()
         for column in features["columns"]
         if name in brain_datasets
     ]

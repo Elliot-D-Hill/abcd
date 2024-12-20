@@ -115,7 +115,7 @@ class ABCDDataModule(LightningDataModule):
         self.test = test
         self.loader = partial(
             DataLoader,
-            **cfg.dataloader.model_dump(),
+            **cfg.dataloader.dict(),
             collate_fn=propensity_collate_fn
             if cfg.experiment.analysis == "propensity"
             else collate_fn,

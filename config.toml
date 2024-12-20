@@ -2,11 +2,11 @@ random_seed = 42
 device = "cuda"
 fast_dev_run = false
 regenerate = true
-tune = false
+tune = true
 log = false
 predict = false
 evaluate = false
-importance = true
+importance = false
 plot = false
 tables = false
 verbose = false
@@ -40,7 +40,7 @@ analysis = "questions"
 split_on = "src_subject_id" # sample_id, site_id
 
 [preprocess]
-null_cutoff = 0.50 # 279
+null_cutoff = 0.25
 columns_to_drop = [
     "_nm",
     "_nt",
@@ -63,20 +63,26 @@ val = 0.1
 test = 0.1
 
 [dataloader]
-batch_size = 256
+batch_size = 512
 num_workers = 10
 pin_memory = true
 persistent_workers = true
 multiprocessing_context = "fork"
 
 [tuner]
-n_trials = 64
+n_trials = 128
+[tuner.methods]
+0 = "linear"
+1 = "mlp"
+2 = "rnn"
+3 = "lstm"
+4 = "transformer"
 
 [trainer]
 gradient_clip_val = 1.0
 max_epochs = 100
-enable_progress_bar = true
-enable_model_summary = true
+enable_progress_bar = false
+enable_model_summary = false
 
 [optimizer]
 nesterov = true
@@ -88,7 +94,6 @@ weight_decay = 1e-4
 method = "lstm"
 hidden_dim = 128
 dropout = 0.5
-l1_lambda = 1e-5
 num_layers = 2
 output_dim = 4
 

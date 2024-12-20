@@ -84,9 +84,6 @@ class Transformer(nn.Module):
         max_seq_len,
     ):
         super().__init__()
-        self.positional_embedding = nn.Embedding(
-            num_embeddings=max_seq_len, embedding_dim=input_dim, padding_idx=0
-        )
         hidden_dim = num_heads * round(hidden_dim / num_heads)
         self.input_fc = nn.Linear(in_features=input_dim, out_features=hidden_dim)
         encoder_layer = nn.TransformerEncoderLayer(
@@ -97,20 +94,16 @@ class Transformer(nn.Module):
             batch_first=True,
             norm_first=False,
         )
-        self.transformer_encoder = nn.TransformerEncoder(
-            encoder_layer, num_layers=num_layers
+        self.transformer = nn.TransformerEncoder(
+            encoder_layer, num_layers=num_layers, norm=nn.LayerNorm(hidden_dim)
         )
         self.output_fc = nn.Linear(in_features=hidden_dim, out_features=output_dim)
 
     def forward(self, x: torch.Tensor):
         mask = generate_mask(x.size(1)).to(x.device)
         padding_mask = (x == 0.0).all(dim=-1)
-        indices = (~padding_mask).cumsum(dim=1) * (~padding_mask).long()
-        x = x + self.positional_embedding(indices)
         out = self.input_fc(x)
-        out = self.transformer_encoder(
-            out, mask=mask, src_key_padding_mask=padding_mask.bool()
-        )
+        out = self.transformer(out, mask=mask, src_key_padding_mask=padding_mask.bool())
         out = self.output_fc(out)
         return out
 
@@ -135,7 +128,7 @@ class Network(LightningModule):
         self.model = make_architecture(cfg=cfg.model)
         reduction = "none" if cfg.experiment.analysis == "propensity" else "mean"
         self.criterion = nn.CrossEntropyLoss(reduction=reduction)
-        self.optimizer = SGD(self.model.parameters(), **cfg.optimizer.model_dump())
+        self.optimizer = SGD(self.model.parameters(), **cfg.optimizer.dict())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
         self.propensity = cfg.experiment.analysis == "propensity"
 
@@ -148,10 +141,7 @@ class Network(LightningModule):
         is_not_nan = ~torch.isnan(labels).flatten()
         outputs = outputs.flatten(0, 1)[is_not_nan]
         labels = labels.flatten()[is_not_nan]
-        loss: torch.Tensor = self.criterion(outputs, labels)  # .long()
-        if loss.isnan().any():
-            print("Loss is NaN")
-            exit()
+        loss: torch.Tensor = self.criterion(outputs, labels.long())
         metrics = make_metrics(step, loss, outputs, labels)
         self.log_dict(metrics, prog_bar=True)
         return loss
