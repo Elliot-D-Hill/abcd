@@ -1,12 +1,12 @@
 random_seed = 42
 device = "cuda"
 fast_dev_run = false
-regenerate = false
+regenerate = true
 tune = true
 log = false
 predict = false
 evaluate = false
-importance = true
+importance = false
 plot = false
 tables = false
 verbose = false
@@ -40,7 +40,7 @@ analysis = "questions"
 split_on = "src_subject_id" # sample_id, site_id
 
 [preprocess]
-null_cutoff = 0.25 # 279
+null_cutoff = 0.25
 columns_to_drop = [
     "_nm",
     "_nt",
@@ -63,7 +63,7 @@ val = 0.1
 test = 0.1
 
 [dataloader]
-batch_size = 256
+batch_size = 512
 num_workers = 10
 pin_memory = true
 persistent_workers = true
@@ -71,12 +71,18 @@ multiprocessing_context = "fork"
 
 [tuner]
 n_trials = 128
+[tuner.methods]
+0 = "linear"
+1 = "mlp"
+2 = "rnn"
+3 = "lstm"
+4 = "transformer"
 
 [trainer]
 gradient_clip_val = 1.0
 max_epochs = 100
-enable_progress_bar = true
-enable_model_summary = true
+enable_progress_bar = false
+enable_model_summary = false
 
 [optimizer]
 nesterov = true
@@ -88,7 +94,6 @@ weight_decay = 1e-4
 method = "lstm"
 hidden_dim = 128
 dropout = 0.5
-l1_lambda = 1e-5
 num_layers = 2
 output_dim = 4
 
@@ -123,11 +128,6 @@ high = 512
 name = "dropout"
 low = 0.0
 high = 0.90
-[hyperparameters.model.l1_lambda]
-name = "l1_lambda"
-low = 1e-7
-high = 1e-1
-log = true
 [hyperparameters.model.num_layers]
 name = "num_layers"
 low = 1
@@ -169,10 +169,10 @@ best_model = "checkpoints/best.ckpt"
 study = "study.pkl"
 logs = "lightning_logs/"
 predictions = "predictions.parquet"
-shap_values = "shap_values.parquet"
-group_shap_values = "group_shap_values.parquet"
-shap_coef = "shap_coef.parquet"
-group_shap_coef = "group_shap_coef.parquet"
+shap_values = "shap/values.parquet"
+group_shap_values = "shap/group_values.parquet"
+shap_coef = "shap/coefficients.parquet"
+group_shap_coef = "group_coefficients.parquet"
 
 [features]
 [features.mh_p_cbcl]

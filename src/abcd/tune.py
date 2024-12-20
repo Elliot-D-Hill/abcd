@@ -8,13 +8,11 @@ from abcd.config import Config
 from abcd.dataset import ABCDDataModule
 from abcd.model import Network, make_trainer
 
-METHODS = {0: "linear", 1: "mlp", 2: "rnn", 3: "lstm"}  # , 4: "transformer"
-
 
 def make_params(trial: optuna.Trial, cfg: Config):
     hparams = cfg.hyperparameters
-    # method_index = trial.suggest_int(**hparams.model.method)
-    cfg.model.method = "transformer"  # METHODS[method_index]
+    method_index = trial.suggest_int(**hparams.model.method)
+    cfg.model.method = cfg.tuner.methods[method_index]
     cfg.model.hidden_dim = trial.suggest_int(**hparams.model.hidden_dim)
     cfg.model.num_layers = trial.suggest_int(**hparams.model.num_layers)
     cfg.model.dropout = trial.suggest_float(**hparams.model.dropout)
@@ -44,7 +42,6 @@ class Objective:
         path = Path(cfg.filepaths.data.results.checkpoints / "last.ckpt")
         if path.exists():
             path.unlink()
-        # model: LightningModule = torch.compile(model)  # type: ignore
         trainer.fit(model, datamodule=self.data_module)
         metrics = trainer.validate(model, datamodule=self.data_module, ckpt_path="last")
         val_loss = metrics[-1]["val_loss"]
