@@ -1,8 +1,8 @@
 random_seed = 42
 device = "cuda"
 fast_dev_run = false
-regenerate = false
-tune = true
+regenerate = true
+tune = false
 log = false
 predict = false
 evaluate = false
@@ -40,7 +40,7 @@ analysis = "questions"
 split_on = "src_subject_id" # sample_id, site_id
 
 [preprocess]
-null_cutoff = 0.25 # 279
+null_cutoff = 0.50 # 279
 columns_to_drop = [
     "_nm",
     "_nt",
@@ -70,7 +70,7 @@ persistent_workers = true
 multiprocessing_context = "fork"
 
 [tuner]
-n_trials = 128
+n_trials = 64
 
 [trainer]
 gradient_clip_val = 1.0
@@ -114,15 +114,15 @@ high = 0.99
 [hyperparameters.model.method]
 name = "method"
 low = 0
-high = 4
+high = 3
 [hyperparameters.model.hidden_dim]
 name = "hidden_dim"
 low = 64
-high = 512
+high = 256
 [hyperparameters.model.dropout]
 name = "dropout"
 low = 0.0
-high = 0.90
+high = 0.75
 [hyperparameters.model.l1_lambda]
 name = "l1_lambda"
 low = 1e-7
@@ -169,10 +169,10 @@ best_model = "checkpoints/best.ckpt"
 study = "study.pkl"
 logs = "lightning_logs/"
 predictions = "predictions.parquet"
-shap_values = "shap_values.parquet"
-group_shap_values = "group_shap_values.parquet"
-shap_coef = "shap_coef.parquet"
-group_shap_coef = "group_shap_coef.parquet"
+shap_values = "shap/values.parquet"
+group_shap_values = "shap/group_values.parquet"
+shap_coef = "shap/coefficients.parquet"
+group_shap_coef = "shap/group_coefficients.parquet"
 
 [features]
 [features.mh_p_cbcl]

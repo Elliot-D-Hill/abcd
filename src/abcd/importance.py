@@ -52,60 +52,38 @@ def bootstrap_shap_values(df: pl.DataFrame, n_bootstraps: int):
 
 def format_shap_values(shap_values, inputs, cfg: Config, columns: list[str]):
     # metadata = pl.read_excel("data/supplement/tables/supplementary_table_1.xlsx")
-    metadata = pl.read_parquet("data/supplement/tables/supplementary_table_1.parquet")
-    # metadata.write_excel("data/supplement/tables/supplementary_table_1.xlsx")
-    shap = pl.DataFrame(shap_values, schema=columns)
+    df = pl.DataFrame(shap_values, schema=columns)
     inputs = pl.DataFrame(inputs, schema=columns)
-    shap = shap.unpivot(index=cfg.index.sample_id, value_name="shap_value")
-    inputs = inputs.unpivot(index=cfg.index.sample_id, value_name="feature_value")
-    shap = shap.with_columns(inputs["feature_value"])
-    shap = shap.drop_nulls()
-    shap = shap.join(metadata, on="variable")
-    shap.write_parquet(cfg.filepaths.data.results.shap_values)
+    df = df.unpivot(value_name="shap_value")
+    inputs = inputs.unpivot(value_name="feature_value")
+    df = df.with_columns(inputs["feature_value"])
+    metadata = pl.read_parquet("data/supplement/tables/supplementary_table_1.parquet")
+    df = df.join(metadata, on="variable")
+    df.write_parquet(cfg.filepaths.data.results.shap_values)
 
 
 def group_shap_values(groups: list[str], cfg: Config):
     df = pl.read_parquet(cfg.filepaths.data.results.shap_values)
-    df = df.group_by(cfg.index.sample_id, *groups).agg(
-        pl.col("shap_value", "feature_value").sum()
-    )
+    df = df.group_by(groups).agg(pl.col("shap_value", "feature_value").sum())
     df.write_parquet(cfg.filepaths.data.results.group_shap_values)
 
 
 def shap_coef(cfg: Config):
-    shap = pl.read_parquet(cfg.filepaths.data.results.shap_values)
-    metadata = pl.read_parquet("data/supplement/tables/supplementary_table_1.parquet")
-    shap = shap.join(metadata, on=["variable", "respondent"])
+    shap_values = pl.read_parquet(cfg.filepaths.data.results.shap_values)
     data: list[pl.DataFrame] = []
     groups = ["question", "respondent"]
-    for (question, respondent), group in shap.group_by(groups):
+    for (question, respondent), group in shap_values.group_by(groups):
         bootstraps = bootstrap_shap_values(group, n_bootstraps=1000)
         bootstraps = bootstraps.with_columns(
             question=pl.lit(question), respondent=pl.lit(respondent)
         )
         data.append(bootstraps)
     df = pl.concat(data)
-    df = df.join(metadata, on=groups)
     df.write_parquet(cfg.filepaths.data.results.shap_coef)
 
 
 def group_shap_coef(groups: list[str], cfg: Config):
     shap = pl.read_parquet(cfg.filepaths.data.results.shap_values)
-    shap = shap.group_by(cfg.index.sample_id, *groups).sum()
-    data: list[pl.DataFrame] = []
-    for (dataset, respondent), group in shap.group_by(groups):
-        bootstraps = bootstrap_shap_values(group, n_bootstraps=1000)
-        bootstraps = bootstraps.with_columns(
-            dataset=pl.lit(dataset), respondent=pl.lit(respondent)
-        )
-        data.append(bootstraps)
-    df = pl.concat(data)
-    df.write_parquet(cfg.filepaths.data.results.group_shap_coef)
-
-
-def summed_group_shap_coef(groups: list[str], cfg: Config):
-    shap = pl.read_parquet(cfg.filepaths.data.results.shap_values)
-    shap = shap.group_by(cfg.index.sample_id, *groups).sum()
     data: list[pl.DataFrame] = []
     for (dataset, respondent), group in shap.group_by(groups):
         bootstraps = bootstrap_shap_values(group, n_bootstraps=1000)
@@ -120,7 +98,7 @@ def summed_group_shap_coef(groups: list[str], cfg: Config):
 def estimate_importance(cfg: Config, data_module: ABCDDataModule):
     shap_values, inputs = make_shap_values(cfg=cfg, data_module=data_module)
     format_shap_values(shap_values, inputs, cfg=cfg, columns=data_module.columns)
-    shap_coef(cfg=cfg)
+    # shap_coef(cfg=cfg)
     groups = ["dataset", "respondent"]
-    group_shap_values(groups=groups, cfg=cfg)
+    # group_shap_values(groups=groups, cfg=cfg)
     group_shap_coef(groups=groups, cfg=cfg)

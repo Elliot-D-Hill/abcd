@@ -169,7 +169,7 @@ def transform_dataset(cfg: Config) -> pl.LazyFrame:
     ]
     labels = metadata.select(index_columns).drop(cfg.index.propensity)
     df = labels.join(df, on=cfg.index.join_on, how="inner").sort(cfg.index.join_on)
-    df.collect().write_parquet("data/temp.parquet")
+    # df.collect().write_parquet("data/temp.parquet")
     columns = cs.numeric().exclude(index_columns)
     train = columns.filter(pl.col(cfg.index.split).eq("train"))
     # imputation = impute(columns, method="median", train=train)
@@ -180,7 +180,7 @@ def transform_dataset(cfg: Config) -> pl.LazyFrame:
     df = df.sort(cfg.index.join_on)
     df = df.select(pl.col(index_columns), pl.exclude(index_columns))
     df = df.drop(cs.string() & ~cs.by_name([cfg.index.split] + cfg.index.join_on))
-    df.collect().write_parquet("data/temp.parquet")
+    # df.collect().write_parquet("data/temp.parquet")
     # print(df.select(pl.selectors.numeric()).max().unpivot().sort("value").collect())
     return df
 

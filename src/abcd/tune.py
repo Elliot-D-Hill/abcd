@@ -8,13 +8,13 @@ from abcd.config import Config
 from abcd.dataset import ABCDDataModule
 from abcd.model import Network, make_trainer
 
-METHODS = {0: "linear", 1: "mlp", 2: "rnn", 3: "lstm"}  # , 4: "transformer"
+METHODS = {0: "linear", 1: "mlp", 2: "rnn", 3: "lstm", 4: "transformer"}
 
 
 def make_params(trial: optuna.Trial, cfg: Config):
     hparams = cfg.hyperparameters
-    # method_index = trial.suggest_int(**hparams.model.method)
-    cfg.model.method = "transformer"  # METHODS[method_index]
+    method_index = trial.suggest_int(**hparams.model.method)
+    cfg.model.method = METHODS[method_index]
     cfg.model.hidden_dim = trial.suggest_int(**hparams.model.hidden_dim)
     cfg.model.num_layers = trial.suggest_int(**hparams.model.num_layers)
     cfg.model.dropout = trial.suggest_float(**hparams.model.dropout)
