@@ -69,3 +69,4 @@ RISK_GROUPS = {
     "3": "Moderate risk",
     "4": "High risk",
 }
+RISK_MAPPING = {1: "None", 2: "Low", 3: "Moderate", 4: "High"}

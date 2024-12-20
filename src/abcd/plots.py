@@ -7,6 +7,7 @@ import polars.selectors as cs
 import seaborn as sns
 
 from abcd.config import Config
+from abcd.constants import RISK_MAPPING
 
 FORMAT = "pdf"
 
@@ -67,7 +68,38 @@ def quartile_curves():
     plt.savefig(f"data/figures/figure_1.{FORMAT}", format=FORMAT)
 
 
-RISK_MAPPING = {1: "None", 2: "Low", 3: "Moderate", 4: "High"}
+def abs_shap_sum(filepath: Path):
+    df = pl.read_parquet(filepath)
+    order = (
+        df.group_by("dataset")
+        .agg(pl.col("shap_value").sum().abs())
+        .sort("shap_value", descending=True)["dataset"]
+        .to_list()
+    )
+    dfs = []
+    for _ in range(1000):
+        resampled = df.sample(fraction=1, with_replacement=True)
+        resampled = resampled.group_by(["dataset", "respondent"]).agg(
+            pl.col("shap_value").sum().abs()
+        )
+        dfs.append(resampled)
+    df = pl.concat(dfs)
+    g = sns.pointplot(
+        data=df,
+        x="shap_value",
+        y="dataset",
+        hue="respondent",
+        linestyles="none",
+        order=order,
+        errorbar="pi",
+    )
+    g.set(ylabel="Predictor category", xlabel="Absolute SHAP value sum")
+    plt.legend(title="Respondent")
+    g.yaxis.grid(True)
+    plt.axvline(x=0, color="black", linestyle="--")
+    plt.tight_layout()
+    sns.move_legend(g, "lower right")
+    plt.savefig(f"data/figures/figure_2.{FORMAT}", format=FORMAT, bbox_inches="tight")
 
 
 def analysis_comparison():
@@ -206,6 +238,36 @@ def p_factor_model_comparison():
     )
 
 
+def group_shap_coef(filepath: Path):
+    sns.set_theme(style="darkgrid", font_scale=1.4)
+    df = pl.read_parquet(filepath)
+    order = (
+        df.group_by("dataset")
+        .agg(pl.col("coefficient").mean().abs())
+        .sort("coefficient", descending=True)["dataset"]
+        .to_list()
+    )
+    g = sns.pointplot(
+        data=df,
+        x="coefficient",
+        y="dataset",
+        hue="respondent",
+        order=order,
+        linestyles="none",
+        errorbar="pi",
+    )
+    plt.legend(title="Respondent")
+    g.yaxis.grid(True)
+    plt.axvline(x=0, color="black", linestyle="--")
+    g.set_xlabel("SHAP coefficient")
+    g.set_ylabel("Predictor category")
+    plt.savefig(
+        f"data/supplement/figures/supplementary_figure_5.{FORMAT}",
+        format=FORMAT,
+        bbox_inches="tight",
+    )
+
+
 def shap_scatter(filepath: Path):
     sns.set_theme(style="darkgrid", font_scale=1.4)
     df = pl.read_parquet(filepath)
@@ -239,70 +301,6 @@ def shap_scatter(filepath: Path):
         format=FORMAT,
         bbox_inches="tight",
     )
-
-
-def group_shap_coef(filepath: Path):
-    sns.set_theme(style="darkgrid", font_scale=1.4)
-    df = pl.read_parquet(filepath)
-    order = (
-        df.group_by("dataset")
-        .agg(pl.col("coefficient").mean().abs())
-        .sort("coefficient", descending=True)["dataset"]
-        .to_list()
-    )
-    g = sns.pointplot(
-        data=df,
-        x="coefficient",
-        y="dataset",
-        hue="respondent",
-        order=order,
-        linestyles="none",
-        errorbar="pi",
-    )
-    plt.legend(title="Respondent")
-    g.yaxis.grid(True)
-    plt.axvline(x=0, color="black", linestyle="--")
-    g.set_xlabel("SHAP coefficient")
-    g.set_ylabel("Predictor category")
-    plt.savefig(
-        f"data/supplement/figures/supplementary_figure_5.{FORMAT}",
-        format=FORMAT,
-        bbox_inches="tight",
-    )
-
-
-def abs_shap_sum(filepath: Path):
-    df = pl.read_parquet(filepath)
-    order = (
-        df.group_by("dataset")
-        .agg(pl.col("shap_value").sum().abs())
-        .sort("shap_value", descending=True)["dataset"]
-        .to_list()
-    )
-    dfs = []
-    for _ in range(1000):
-        resampled = df.sample(fraction=1, with_replacement=True)
-        resampled = resampled.group_by(["dataset", "respondent"]).agg(
-            pl.col("shap_value").sum().abs()
-        )
-        dfs.append(resampled)
-    df = pl.concat(dfs)
-    g = sns.pointplot(
-        data=df,
-        x="shap_value",
-        y="dataset",
-        hue="respondent",
-        linestyles="none",
-        order=order,
-        errorbar="pi",
-    )
-    g.set(ylabel="Predictor category", xlabel="Absolute SHAP value sum")
-    plt.legend(title="Respondent")
-    g.yaxis.grid(True)
-    plt.axvline(x=0, color="black", linestyle="--")
-    plt.tight_layout()
-    sns.move_legend(g, "lower right")
-    plt.savefig(f"data/figures/figure_2.{FORMAT}", format=FORMAT, bbox_inches="tight")
 
 
 def plot(cfg: Config):
