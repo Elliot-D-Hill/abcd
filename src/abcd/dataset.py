@@ -23,25 +23,13 @@ def make_tensor_dataset(cfg: Config, dataset: pl.DataFrame):
             propensity = df.select(cfg.index.propensity).to_torch(dtype=pl.Float32)
             sample = (inputs, labels, propensity)
         else:
-            sample = (inputs, labels)
+            sample = (inputs, labels, None)
         data.append(sample)
     feature_columns = df.select(features).columns
     return data, feature_columns
 
 
 class TimeSeriesDataset(Dataset):
-    def __init__(self, cfg: Config, data: pl.DataFrame) -> None:
-        self.dataset, self.columns = make_tensor_dataset(cfg=cfg, dataset=data)
-
-    def __len__(self):
-        return len(self.dataset)
-
-    def __getitem__(self, index) -> tuple[torch.Tensor, ...]:
-        features, labels = self.dataset[index]
-        return features, labels
-
-
-class PropensityDataset(Dataset):
     def __init__(self, cfg: Config, data: pl.DataFrame) -> None:
         self.dataset, self.columns = make_tensor_dataset(cfg=cfg, dataset=data)
 
@@ -93,14 +81,11 @@ def init_datasets(splits: dict[str, pl.DataFrame | list[str]], cfg: Config):
             val = FileDataset(cfg=cfg, data=splits["val"])
             test = FileDataset(cfg=cfg, data=splits["test"])
         case pl.DataFrame(), pl.DataFrame(), pl.DataFrame():
-            if cfg.experiment.analysis == "propensity":
-                train = PropensityDataset(cfg=cfg, data=splits["train"])
-                val = PropensityDataset(cfg=cfg, data=splits["val"])
-                test = PropensityDataset(cfg=cfg, data=splits["test"])
-            else:
-                train = TimeSeriesDataset(cfg=cfg, data=splits["train"])
-                val = TimeSeriesDataset(cfg=cfg, data=splits["val"])
-                test = TimeSeriesDataset(cfg=cfg, data=splits["test"])
+            train = TimeSeriesDataset(cfg=cfg, data=splits["train"])
+            val = TimeSeriesDataset(cfg=cfg, data=splits["val"])
+            test = TimeSeriesDataset(cfg=cfg, data=splits["test"])
+        case _, _, _:
+            raise ValueError("Invalid dataset type")
     return train, val, test
 
 

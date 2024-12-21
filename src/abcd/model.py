@@ -126,64 +126,55 @@ class Network(LightningModule):
         super().__init__()
         self.save_hyperparameters(logger=False)
         self.model = make_architecture(cfg=cfg.model)
-        reduction = "none" if cfg.experiment.analysis == "propensity" else "mean"
-        self.criterion = nn.CrossEntropyLoss(reduction=reduction)
+        self.criterion = nn.CrossEntropyLoss(reduction="none")
         self.optimizer = SGD(self.model.parameters(), **cfg.optimizer.dict())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
         self.propensity = cfg.experiment.analysis == "propensity"
 
-    def forward(self, inputs):
+    def forward(self, inputs) -> torch.Tensor:
         return self.model(inputs)
 
-    def step(self, step: str, batch: tuple[torch.Tensor, ...]):
-        inputs, labels = batch
-        outputs: torch.Tensor = self(inputs)
+    def drop_nan(
+        self,
+        outputs: torch.Tensor,
+        labels: torch.Tensor,
+        propensity: torch.Tensor | None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         is_not_nan = ~torch.isnan(labels).flatten()
         outputs = outputs.flatten(0, 1)[is_not_nan]
         labels = labels.flatten()[is_not_nan]
-        loss: torch.Tensor = self.criterion(outputs, labels.long())
-        metrics = make_metrics(step, loss, outputs, labels)
-        self.log_dict(metrics, prog_bar=True)
-        return loss
+        if propensity is not None:
+            propensity = propensity.flatten()[is_not_nan]
+            return outputs, labels, propensity
+        return outputs, labels, None
 
-    def propensity_step(self, step: str, batch: tuple[torch.Tensor, ...]):
+    def step(self, step: str, batch: tuple[torch.Tensor, ...]):
         inputs, labels, propensity = batch
         outputs: torch.Tensor = self(inputs)
-        is_not_nan = ~torch.isnan(labels).flatten()
-        outputs = outputs.flatten(0, 1)[is_not_nan]
-        labels = labels.flatten()[is_not_nan]
+        outputs, labels, propensity = self.drop_nan(outputs, labels, propensity)
         loss: torch.Tensor = self.criterion(outputs, labels.long())
-        propensity = propensity.flatten()[is_not_nan]
-        loss = loss * (1 / (propensity + 1e-6))
+        if propensity is not None:
+            loss = loss * propensity
         loss = loss.mean()
         metrics = make_metrics(step, loss, outputs, labels)
         self.log_dict(metrics, prog_bar=True)
         return loss
 
     def training_step(self, batch, batch_idx):
-        if self.propensity:
-            return self.propensity_step("train", batch)
         return self.step("train", batch)
 
     def validation_step(self, batch, batch_idx):
-        if self.propensity:
-            return self.propensity_step("val", batch)
         return self.step("val", batch)
 
     def test_step(self, batch, batch_idx):
-        if self.propensity:
-            return self.propensity_step("test", batch)
         self.step("test", batch)
 
-    def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        if self.propensity:
-            inputs, labels, _ = batch
-        else:
-            inputs, labels = batch
+    def predict_step(
+        self, batch: tuple[torch.Tensor, ...], batch_idx, dataloader_idx=0
+    ):
+        inputs, labels, _ = batch
         outputs = self(inputs)
-        is_not_nan = ~torch.isnan(labels).flatten()
-        outputs = outputs.flatten(0, 1)[is_not_nan]
-        labels = labels.flatten()[is_not_nan]
+        outputs, labels, _ = self.drop_nan(outputs, labels, _)
         return outputs, labels
 
     def configure_optimizers(self):
