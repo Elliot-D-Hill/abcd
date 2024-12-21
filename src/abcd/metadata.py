@@ -128,6 +128,55 @@ def make_variable_df(cfg: Config, columns: list[list[str]]) -> pl.DataFrame:
     return pl.concat(dfs)
 
 
+def remove_spanish(df: pl.DataFrame) -> pl.DataFrame:
+    spanish = [
+        "\\s*/\\s*[^;]+",
+        " Sí",
+        " Niego contestar",
+        "No lo s√É¬© ",
+        " No deseo responder",
+        "no hay reglas familiares con respecto al consumo de marihuana fuera de la casa",
+        "\\| If Separated",
+        "(\\|)",
+        "\\.",
+    ]
+    spanish = "|".join(spanish)
+    return df.with_columns(
+        pl.col("response").str.replace_all(spanish, "")
+    ).with_columns(pl.col("response").str.replace("No No", "No"))
+
+
+def clean_variables(df: pl.DataFrame):
+    sex_question = (
+        "What sex was the child assigned at birth, on the original birth certificate?"
+    )
+    sex_response = "1 = Male; 2 = Female; 3 = Intersex-Male; 4 = Intersex-Female; 999 = Don't know; 777 = Refuse to answer"
+    df = (
+        df.with_columns(
+            pl.when(pl.col("table").eq("mh_p_cbcl"))
+            .then(True)
+            .otherwise(False)
+            .alias("autoregressive"),
+            pl.col("variable").replace("demo_sex_v2_1", "demo_sex_v2"),
+        )
+        .with_columns(
+            pl.col("dataset").replace("Problem monitoring", "Parental monitoring"),
+            pl.when(pl.col("variable").eq("demo_sex_v2"))
+            .then(pl.lit(sex_response))
+            .when(pl.col("response").is_null() & pl.col("variable").ne("demo_sex_v2"))
+            .then(pl.lit("Continuous"))
+            .otherwise(pl.col("response"))
+            .alias("response"),
+            pl.when(pl.col("variable").eq("demo_sex_v2"))
+            .then(pl.lit(sex_question))
+            .otherwise(pl.col("question"))
+            .alias("question"),
+        )
+        .filter(pl.col("variable").ne("src_subject_id"))
+    )
+    return df
+
+
 def make_variable_metadata(cfg: Config, dfs: list[pl.LazyFrame]) -> None:
     columns = [df.collect_schema().names() for df in dfs]
     variables = make_variable_df(cfg=cfg, columns=columns)
@@ -143,21 +192,13 @@ def make_variable_metadata(cfg: Config, dfs: list[pl.LazyFrame]) -> None:
         }
     )
     df = variables.join(df, on=["table", "variable"], how="left", coalesce=True)
-    df = (
-        df.with_columns(
-            format_questions(),
-            pl.col("dataset").str.replace_all("_", " "),
-            pl.col("response").str.replace_all("\\s*/\\s*[^;]+", ""),
-        )
-        .with_columns(
-            captialize("dataset"),
-            captialize("question"),
-        )
-        .with_columns(
-            rename_questions(),
-            rename_datasets(),
-        )
-        .unique(subset=["variable"])
-        .sort("dataset", "respondent", "variable")
+    df = df.with_columns(
+        format_questions(), pl.col("dataset").str.replace_all("_", " ")
     )
+    df = remove_spanish(df)
+    df = clean_variables(df)
+    df = df.with_columns(captialize("dataset"), captialize("question"))
+    df = df.with_columns(rename_questions(), rename_datasets())
+    df = df.unique(subset=["variable"])
+    df = df.sort("dataset", "respondent", "variable")
     df.write_parquet("data/raw/variable_metadata.parquet")
