@@ -74,14 +74,7 @@ def generate_mask(seq_len):
 
 class Transformer(nn.Module):
     def __init__(
-        self,
-        input_dim,
-        output_dim,
-        hidden_dim,
-        num_layers,
-        num_heads,
-        dropout,
-        max_seq_len,
+        self, input_dim, output_dim, hidden_dim, num_layers, num_heads, dropout
     ):
         super().__init__()
         hidden_dim = num_heads * round(hidden_dim / num_heads)
@@ -228,7 +221,7 @@ def make_architecture(cfg: Model):
         case "lstm":
             return sequence_model(method=nn.LSTM)
         case "transformer":
-            return Transformer(num_heads=8, max_seq_len=4, **hparams)
+            return Transformer(num_heads=8, **hparams)
         case _:
             raise ValueError(
                 f"Invalid method '{cfg.method}'. Choose from: 'rnn', 'lstm', 'mlp', or 'transformer'"

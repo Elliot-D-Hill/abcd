@@ -60,7 +60,8 @@ def collate_fn(batch):
     features, labels, propensity = zip(*batch)
     features = pad_sequence(features, batch_first=True, padding_value=0)
     labels = pad_sequence(labels, batch_first=True, padding_value=torch.nan)
-    propensity = pad_sequence(propensity, batch_first=True, padding_value=torch.nan)
+    if propensity is not None:
+        propensity = pad_sequence(propensity, batch_first=True, padding_value=torch.nan)
     return features, labels, propensity
 
 
