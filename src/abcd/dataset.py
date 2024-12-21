@@ -48,12 +48,12 @@ class FileDataset(Dataset):
     def __len__(self):
         return len(self.files)
 
-    def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor, None]:
         filepath = self.files[index]
         data = np.load(filepath)
         features = torch.tensor(data["features"], dtype=torch.float32)
         labels = torch.tensor(data["label"], dtype=torch.float32)
-        return features, labels, torch.tensor([torch.nan] * labels.size(0))
+        return features, labels, None
 
 
 def collate_fn(batch):
