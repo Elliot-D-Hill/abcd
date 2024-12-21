@@ -48,20 +48,19 @@ class FileDataset(Dataset):
     def __len__(self):
         return len(self.files)
 
-    def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor, None]:
+    def __getitem__(self, index) -> tuple[torch.Tensor, ...]:
         filepath = self.files[index]
         data = np.load(filepath)
         features = torch.tensor(data["features"], dtype=torch.float32)
         labels = torch.tensor(data["label"], dtype=torch.float32)
-        return features, labels, None
+        return features, labels, torch.tensor([1.0] * labels.size(0))
 
 
 def collate_fn(batch):
     features, labels, propensity = zip(*batch)
     features = pad_sequence(features, batch_first=True, padding_value=0)
-    labels = pad_sequence(labels, batch_first=True, padding_value=torch.nan)
-    if propensity is not None:
-        propensity = pad_sequence(propensity, batch_first=True, padding_value=torch.nan)
+    labels = pad_sequence(labels, batch_first=True, padding_value=torch.nan).squeeze(-1)
+    propensity = pad_sequence(propensity, batch_first=True, padding_value=torch.nan)
     return features, labels, propensity
 
 
