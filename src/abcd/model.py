@@ -10,7 +10,6 @@ from lightning.pytorch.loggers import TensorBoardLogger
 from torch import nn
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from torch.optim.sgd import SGD
-from torchmetrics.functional.classification import multiclass_auroc
 from torchvision.ops import MLP
 
 from abcd.config import Config, Model
@@ -30,7 +29,7 @@ class MultiLayerPerceptron(nn.Module):
         self.mlp = MLP(
             in_channels=input_dim,
             hidden_channels=hidden_channels,
-            activation_layer=nn.SiLU,
+            activation_layer=nn.ReLU,
             norm_layer=nn.LayerNorm,
             dropout=dropout,
         )
@@ -93,36 +92,49 @@ class Transformer(nn.Module):
         self.output_fc = nn.Linear(in_features=hidden_dim, out_features=output_dim)
 
     def forward(self, x: torch.Tensor):
-        mask = generate_mask(x.size(1)).to(x.device)
-        padding_mask = (x == 0.0).all(dim=-1)
+        mask = generate_mask(x.size(1)).to(x.device).bool()
+        padding_mask = (x == 0.0).all(dim=-1).bool()
         out = self.input_fc(x)
-        out = self.transformer(out, mask=mask, src_key_padding_mask=padding_mask.bool())
+        out = self.transformer(out, mask=mask, src_key_padding_mask=padding_mask)
         out = self.output_fc(out)
         return out
 
 
-def make_metrics(step, loss, outputs, labels) -> dict:
-    metrics = {f"{step}_loss": loss}
-    if step == "val":
-        auroc_score = multiclass_auroc(
-            preds=outputs,
-            target=labels.long(),
-            num_classes=outputs.shape[-1],
-            average="none",
-        )
-        metrics.update({"auc": auroc_score.mean().item()})
-    return metrics
+class AutoEncoderClassifer(nn.Module):
+    def __init__(self, encoder, decoder, hidden_dim, output_dim):
+        super().__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+        self.linear = nn.Linear(in_features=hidden_dim, out_features=output_dim)
+
+    def forward(self, x):
+        encoding = self.encoder(x)
+        decoding = self.decoder(encoding)
+        output = self.linear(encoding)
+        return output, decoding
 
 
 class Network(LightningModule):
     def __init__(self, cfg: Config):
         super().__init__()
         self.save_hyperparameters(logger=False)
-        self.model = make_architecture(cfg=cfg.model)
+
+        if cfg.model.autoencode:
+            encoder = make_architecture(cfg=cfg.model)
+            decoder = make_architecture(cfg=cfg.model)
+            self.model = AutoEncoderClassifer(
+                encoder=encoder,
+                decoder=decoder,
+                hidden_dim=cfg.model.hidden_dim,
+                output_dim=cfg.model.output_dim,
+            )
+        else:
+            self.model = make_architecture(cfg=cfg.model)
         self.criterion = nn.CrossEntropyLoss(reduction="none")
         self.optimizer = SGD(self.model.parameters(), **cfg.optimizer.dict())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
         self.propensity = cfg.experiment.analysis == "propensity"
+        self.mse = nn.MSELoss()
 
     def forward(self, inputs) -> torch.Tensor:
         return self.model(inputs)
@@ -141,7 +153,17 @@ class Network(LightningModule):
             return outputs, labels, propensity
         return outputs, labels, None
 
-    def step(self, step: str, batch: tuple[torch.Tensor, ...]):
+    def autoencoder_step(self, step: str, batch: tuple[torch.Tensor, ...]):
+        inputs, labels, propensity = batch
+        outputs, decoding = self(inputs)
+        outputs, labels, propensity = self.drop_nan(outputs, labels, propensity)
+        mse_loss = self.mse(inputs, decoding)
+        loss = self.criterion(outputs, labels.long())
+        loss = mse_loss + loss.mean()
+        self.log_dict({f"{step}_loss": loss}, prog_bar=True)
+        return loss
+
+    def classifer_step(self, step: str, batch: tuple[torch.Tensor, ...]):
         inputs, labels, propensity = batch
         outputs: torch.Tensor = self(inputs)
         outputs, labels, propensity = self.drop_nan(outputs, labels, propensity)
@@ -149,9 +171,13 @@ class Network(LightningModule):
         if propensity is not None:
             loss = loss * propensity
         loss = loss.mean()
-        metrics = make_metrics(step, loss, outputs, labels)
-        self.log_dict(metrics, prog_bar=True)
+        self.log_dict({f"{step}_loss": loss}, prog_bar=True)
         return loss
+
+    def step(self, step: str, batch: tuple[torch.Tensor, ...]):
+        if isinstance(self.model, AutoEncoderClassifer):
+            return self.autoencoder_step(step, batch)
+        return self.classifer_step(step, batch)
 
     def training_step(self, batch, batch_idx):
         return self.step("train", batch)
@@ -164,7 +190,7 @@ class Network(LightningModule):
 
     def predict_step(
         self, batch: tuple[torch.Tensor, ...], batch_idx, dataloader_idx=0
-    ):
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         inputs, labels, _ = batch
         outputs = self(inputs)
         outputs, labels, _ = self.drop_nan(outputs, labels, _)
@@ -209,7 +235,7 @@ def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
 
 
 def make_architecture(cfg: Model):
-    hparams = cfg.dict(exclude={"method"})
+    hparams = cfg.dict(exclude={"method", "autoencode"})
     sequence_model = partial(SequenceModel, **hparams)
     match cfg.method:
         case "linear":
@@ -221,7 +247,7 @@ def make_architecture(cfg: Model):
         case "lstm":
             return sequence_model(method=nn.LSTM)
         case "transformer":
-            return Transformer(num_heads=8, **hparams)
+            return Transformer(num_heads=4, **hparams)
         case _:
             raise ValueError(
                 f"Invalid method '{cfg.method}'. Choose from: 'rnn', 'lstm', 'mlp', or 'transformer'"

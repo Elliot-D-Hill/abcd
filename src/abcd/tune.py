@@ -1,6 +1,8 @@
 import optuna
 import polars as pl
+import torch
 from optuna.samplers import QMCSampler, TPESampler
+from torchmetrics.functional.classification import multiclass_auroc
 
 from abcd.config import Config
 from abcd.dataset import ABCDDataModule
@@ -9,6 +11,7 @@ from abcd.model import Network, make_trainer
 
 def make_params(trial: optuna.Trial, cfg: Config):
     hparams = cfg.hyperparameters
+    cfg.model.autoencode = 0  # trial.suggest_int(**hparams.model.autoencode)
     method_index = trial.suggest_int(**hparams.model.method)
     cfg.model.method = cfg.tuner.methods[method_index]
     cfg.model.hidden_dim = trial.suggest_int(**hparams.model.hidden_dim)
@@ -41,13 +44,26 @@ class Objective:
         if path.exists():
             path.unlink()
         trainer.fit(model, datamodule=self.data_module)
-        metrics = trainer.validate(model, datamodule=self.data_module, ckpt_path="last")
-        val_loss = metrics[-1]["val_loss"]
+        val_loss = trainer.callback_metrics["val_loss"].item()
         if val_loss < self.best_val_loss:
             self.best_val_loss = val_loss
             trainer.save_checkpoint(
                 cfg.filepaths.data.results.checkpoints / "best.ckpt"
             )
+        predictions = trainer.predict(
+            model, dataloaders=self.data_module.val_dataloader()
+        )
+        if predictions is None:
+            return float("inf")
+        outputs = torch.cat([x[0] for x in predictions])
+        labels = torch.cat([x[1] for x in predictions])
+        auroc_score = multiclass_auroc(
+            preds=outputs,
+            target=labels.long(),
+            num_classes=outputs.shape[-1],
+            average="none",
+        )
+        print("AUC:", auroc_score)
         return val_loss
 
 
