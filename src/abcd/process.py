@@ -6,7 +6,7 @@ import polars as pl
 import polars.selectors as cs
 from nanook.frame import join_dataframes
 from nanook.preprocess import drop_null_columns, filter_null_rows
-from nanook.transform import standardize
+from nanook.transform import impute, standardize
 
 from abcd.config import Config
 from abcd.constants import EVENTS, EVENTS_TO_VALUES
@@ -152,13 +152,6 @@ def collect_datasets(cfg: Config) -> pl.LazyFrame:
     return df
 
 
-def mean_median_imputation(expr: pl.Expr, train: pl.Expr, id: str) -> pl.Expr:
-    mean_median = (
-        train.median().over(id).add(train.median()).truediv(2).fill_null(train.median())
-    )
-    return expr.fill_null(mean_median)
-
-
 def transform_dataset(cfg: Config) -> pl.LazyFrame:
     df = collect_datasets(cfg=cfg)
     metadata = pl.scan_parquet(cfg.filepaths.data.processed.metadata)
@@ -169,19 +162,15 @@ def transform_dataset(cfg: Config) -> pl.LazyFrame:
     ]
     labels = metadata.select(index_columns).drop(cfg.index.propensity)
     df = labels.join(df, on=cfg.index.join_on, how="inner").sort(cfg.index.join_on)
-    # df.collect().write_parquet("data/temp.parquet")
     columns = cs.numeric().exclude(index_columns)
     train = columns.filter(pl.col(cfg.index.split).eq("train"))
-    # imputation = impute(columns, method="median", train=train)
-    imputation = mean_median_imputation(columns, train=train, id=cfg.index.sample_id)
-    df = df.with_columns(imputation)
+    imputation = impute(columns, method="median", train=train)
     scale = standardize(columns, method="zscore", train=train)
     df = df.with_columns(scale)
+    df = df.with_columns(imputation)
     df = df.sort(cfg.index.join_on)
     df = df.select(pl.col(index_columns), pl.exclude(index_columns))
     df = df.drop(cs.string() & ~cs.by_name([cfg.index.split] + cfg.index.join_on))
-    # df.collect().write_parquet("data/temp.parquet")
-    # print(df.select(pl.selectors.numeric()).max().unpivot().sort("value").collect())
     return df
 
 
@@ -189,20 +178,19 @@ def make_mri_dataset(cfg: Config, df: pl.DataFrame) -> None:
     by = [cfg.index.split, cfg.index.sample_id]
     for (split, sample), group in df.group_by(by, maintain_order=True):
         label = group.select(cfg.index.label).to_numpy().astype(np.float32)
-        features = (
-            group.drop(cfg.index.split, cfg.index.sample_id, cfg.index.label)
-            .to_numpy()
-            .astype(np.float32)
-        )
+        features = group.drop(cfg.index.split, cfg.index.sample_id, cfg.index.label)
+        features = features.to_numpy().astype(np.float32)
         path = str(cfg.filepaths.data.analytic.path / f"{split}" / f"{sample}.npz")
         np.savez(path, features=features, label=label)
 
 
 def make_dataset(cfg: Config) -> None:
-    df = transform_dataset(cfg=cfg).collect()
+    df = transform_dataset(cfg=cfg)
     if cfg.experiment.analysis in {"mri", "questions_mri_all"}:
+        df = df.collect(streaming=True)
         make_mri_dataset(cfg=cfg, df=df)
     else:
+        df = df.collect()
         for split, group in df.group_by(cfg.index.split):
             group.write_parquet(
                 cfg.filepaths.data.analytic.path / f"{split[0]}.parquet"

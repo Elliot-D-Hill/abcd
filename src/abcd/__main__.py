@@ -23,7 +23,6 @@ def make_experiment(cfg: Experiment):
 
 
 def main():
-    # os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
     pl.Config().set_tbl_cols(14)
     set_config(transform_output="polars")
     cfg = get_config(

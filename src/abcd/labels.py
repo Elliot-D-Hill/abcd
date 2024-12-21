@@ -90,4 +90,5 @@ def make_labels(cfg: Config) -> pl.LazyFrame:
     df = filter_null_rows(frame=df, columns=cs.by_name(cfg.features.mh_p_cbcl.columns))
     df = apply_transformer(df=df.collect(), cfg=cfg)
     df = shift_y(df=df, cfg=cfg)
+    df = df.shrink_to_fit()
     return df.lazy()
