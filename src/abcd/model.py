@@ -216,7 +216,7 @@ def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
 
 
 def make_architecture(cfg: Model):
-    hparams = cfg.dict(exclude={"method", "l1_lambda"})
+    hparams = cfg.dict(exclude={"method"})
     sequence_model = partial(SequenceModel, **hparams)
     match cfg.method:
         case "linear":
@@ -228,9 +228,7 @@ def make_architecture(cfg: Model):
         case "lstm":
             return sequence_model(method=nn.LSTM)
         case "transformer":
-            return Transformer(
-                num_heads=4, max_seq_len=4, **hparams
-            )  # FIXME: max_seq_len
+            return Transformer(num_heads=8, max_seq_len=4, **hparams)
         case _:
             raise ValueError(
                 f"Invalid method '{cfg.method}'. Choose from: 'rnn', 'lstm', 'mlp', or 'transformer'"

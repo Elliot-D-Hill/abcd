@@ -16,9 +16,8 @@ def make_tensor_dataset(cfg: Config, dataset: pl.DataFrame):
     for df in dataset.partition_by(
         cfg.index.sample_id, maintain_order=True, include_key=False
     ):
-        labels = df.select(cfg.index.label).to_torch(dtype=pl.Float32)
-        subject = df.select(features)
-        inputs = subject.to_torch(dtype=pl.Float32)
+        labels = df[cfg.index.label].to_torch().float()
+        inputs = df.select(features).to_torch(dtype=pl.Float32)
         if cfg.experiment.analysis == "propensity":
             propensity = df.select(cfg.index.propensity).to_torch(dtype=pl.Float32)
             sample = (inputs, labels, propensity)
@@ -49,29 +48,20 @@ class FileDataset(Dataset):
     def __len__(self):
         return len(self.files)
 
-    def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor, None]:
         filepath = self.files[index]
         data = np.load(filepath)
         features = torch.tensor(data["features"], dtype=torch.float32)
-        labels = torch.tensor(data["label"], dtype=torch.float32).squeeze(1)
-        return features, labels
+        labels = torch.tensor(data["label"], dtype=torch.float32)
+        return features, labels, None
 
 
 def collate_fn(batch):
-    features, labels = zip(*batch)
-    padded_features = pad_sequence(features, batch_first=True, padding_value=0)
-    padded_labels = pad_sequence(labels, batch_first=True, padding_value=torch.nan)
-    return padded_features, padded_labels.squeeze(-1)
-
-
-def propensity_collate_fn(batch):
     features, labels, propensity = zip(*batch)
-    padded_features = pad_sequence(features, batch_first=True, padding_value=0)
-    padded_labels = pad_sequence(labels, batch_first=True, padding_value=torch.nan)
-    padded_propensity = pad_sequence(
-        propensity, batch_first=True, padding_value=torch.nan
-    )
-    return padded_features, padded_labels.squeeze(-1), padded_propensity.squeeze(-1)
+    features = pad_sequence(features, batch_first=True, padding_value=0)
+    labels = pad_sequence(labels, batch_first=True, padding_value=torch.nan)
+    propensity = pad_sequence(propensity, batch_first=True, padding_value=torch.nan)
+    return features, labels, propensity
 
 
 def init_datasets(splits: dict[str, pl.DataFrame | list[str]], cfg: Config):
@@ -101,9 +91,7 @@ class ABCDDataModule(LightningDataModule):
         self.loader = partial(
             DataLoader,
             **cfg.dataloader.dict(),
-            collate_fn=propensity_collate_fn
-            if cfg.experiment.analysis == "propensity"
-            else collate_fn,
+            collate_fn=collate_fn,
         )
         if not isinstance(train, FileDataset):
             self.columns = train.columns

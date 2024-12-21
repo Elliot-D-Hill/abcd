@@ -177,9 +177,12 @@ def transform_dataset(cfg: Config) -> pl.LazyFrame:
 def make_mri_dataset(cfg: Config, df: pl.DataFrame) -> None:
     by = [cfg.index.split, cfg.index.sample_id]
     for (split, sample), group in df.group_by(by, maintain_order=True):
-        label = group.select(cfg.index.label).to_numpy().astype(np.float32)
-        features = group.drop(cfg.index.split, cfg.index.sample_id, cfg.index.label)
-        features = features.to_numpy().astype(np.float32)
+        label = group.drop_in_place(cfg.index.label).to_numpy().astype(np.float32)
+        features = (
+            group.drop(cfg.index.split, cfg.index.sample_id)
+            .to_numpy()
+            .astype(np.float32)
+        )
         path = str(cfg.filepaths.data.analytic.path / f"{split}" / f"{sample}.npz")
         np.savez(path, features=features, label=label)
 
