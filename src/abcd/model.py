@@ -101,10 +101,23 @@ class Transformer(nn.Module):
 
 
 class AutoEncoderClassifer(nn.Module):
-    def __init__(self, encoder, decoder, hidden_dim, output_dim):
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers, dropout):
         super().__init__()
-        self.encoder = encoder
-        self.decoder = decoder
+        hidden_channels: list[int] = [hidden_dim] * num_layers
+        self.encoder = MLP(
+            in_channels=input_dim,
+            hidden_channels=hidden_channels,
+            activation_layer=nn.ReLU,
+            norm_layer=nn.LayerNorm,
+            dropout=dropout,
+        )
+        self.decoder = MLP(
+            in_channels=hidden_dim,
+            hidden_channels=hidden_channels + [input_dim],
+            activation_layer=nn.ReLU,
+            norm_layer=nn.LayerNorm,
+            dropout=dropout,
+        )
         self.linear = nn.Linear(in_features=hidden_dim, out_features=output_dim)
 
     def forward(self, x):
@@ -118,18 +131,7 @@ class Network(LightningModule):
     def __init__(self, cfg: Config):
         super().__init__()
         self.save_hyperparameters(logger=False)
-
-        if cfg.model.autoencode:
-            encoder = make_architecture(cfg=cfg.model)
-            decoder = make_architecture(cfg=cfg.model)
-            self.model = AutoEncoderClassifer(
-                encoder=encoder,
-                decoder=decoder,
-                hidden_dim=cfg.model.hidden_dim,
-                output_dim=cfg.model.output_dim,
-            )
-        else:
-            self.model = make_architecture(cfg=cfg.model)
+        self.model = make_architecture(cfg=cfg.model)
         self.criterion = nn.CrossEntropyLoss(reduction="none")
         self.optimizer = SGD(self.model.parameters(), **cfg.optimizer.dict())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
@@ -192,7 +194,7 @@ class Network(LightningModule):
         self, batch: tuple[torch.Tensor, ...], batch_idx, dataloader_idx=0
     ) -> tuple[torch.Tensor, torch.Tensor]:
         inputs, labels, _ = batch
-        outputs = self(inputs)
+        outputs = self(inputs)[0]
         outputs, labels, _ = self.drop_nan(outputs, labels, _)
         return outputs, labels
 
@@ -235,7 +237,7 @@ def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
 
 
 def make_architecture(cfg: Model):
-    hparams = cfg.dict(exclude={"method", "autoencode"})
+    hparams = cfg.dict(exclude={"method"})
     sequence_model = partial(SequenceModel, **hparams)
     match cfg.method:
         case "linear":
@@ -246,9 +248,11 @@ def make_architecture(cfg: Model):
             return sequence_model(method=nn.RNN)
         case "lstm":
             return sequence_model(method=nn.LSTM)
+        case "autoencoder":
+            return AutoEncoderClassifer(**hparams)
         case "transformer":
             return Transformer(num_heads=4, **hparams)
         case _:
             raise ValueError(
-                f"Invalid method '{cfg.method}'. Choose from: 'rnn', 'lstm', 'mlp', or 'transformer'"
+                f"Invalid method '{cfg.method}'. Choose from: 'rnn', 'lstm', 'mlp', 'autoencoder', or 'transformer'"
             )

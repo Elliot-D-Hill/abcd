@@ -68,7 +68,6 @@ class Model(BaseModel):
     num_layers: int
     dropout: float
     output_dim: int
-    autoencode: int
     input_dim: int = -1  # set at runtime
 
 
@@ -77,7 +76,6 @@ class ModelHParams(BaseModel):
     num_layers: dict
     dropout: dict
     method: dict
-    autoencode: dict
 
 
 class OptimizerHParams(BaseModel):
