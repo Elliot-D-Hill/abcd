@@ -11,7 +11,7 @@ from abcd.model import Network, make_trainer
 
 def make_params(trial: optuna.Trial, cfg: Config):
     hparams = cfg.hyperparameters
-    method_index = 4  # trial.suggest_int(**hparams.model.method)
+    method_index = trial.suggest_int(**hparams.model.method)
     cfg.model.method = cfg.tuner.methods[method_index]
     cfg.model.hidden_dim = trial.suggest_int(**hparams.model.hidden_dim)
     cfg.model.num_layers = trial.suggest_int(**hparams.model.num_layers)

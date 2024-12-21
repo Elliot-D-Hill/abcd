@@ -138,18 +138,17 @@ class Network(LightningModule):
         self.propensity = cfg.experiment.analysis == "propensity"
         self.mse = nn.MSELoss()
 
-    def forward(self, inputs) -> torch.Tensor:
+    def forward(self, inputs):
         return self.model(inputs)
 
     def drop_nan(
-        self,
-        outputs: torch.Tensor,
-        labels: torch.Tensor,
-        propensity: torch.Tensor,
+        self, outputs: torch.Tensor, labels: torch.Tensor, propensity: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         is_not_nan = ~torch.isnan(labels).flatten()
-        outputs = outputs.flatten(0, 1)[is_not_nan]
-        labels = labels.flatten()[is_not_nan]
+        outputs = outputs.flatten(0, 1)
+        outputs = outputs[is_not_nan]
+        labels = labels.flatten()
+        labels = labels[is_not_nan]
         if self.propensity:
             propensity = propensity.flatten()[is_not_nan]
             return outputs, labels, propensity
@@ -194,7 +193,10 @@ class Network(LightningModule):
         self, batch: tuple[torch.Tensor, ...], batch_idx, dataloader_idx=0
     ) -> tuple[torch.Tensor, torch.Tensor]:
         inputs, labels, _ = batch
-        outputs = self(inputs)[0]
+        if isinstance(self.model, AutoEncoderClassifer):
+            outputs, _ = self(inputs)
+        else:
+            outputs = self(inputs)
         outputs, labels, _ = self.drop_nan(outputs, labels, _)
         return outputs, labels
 

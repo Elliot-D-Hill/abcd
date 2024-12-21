@@ -24,8 +24,7 @@ def make_tensor_dataset(cfg: Config, dataset: pl.DataFrame):
             propensity = torch.tensor([1.0] * labels.size(0))
         sample = (inputs, labels, propensity)
         data.append(sample)
-    feature_columns = df.select(features).columns
-    return data, feature_columns
+    return data, df.select(features).columns
 
 
 class TimeSeriesDataset(Dataset):
