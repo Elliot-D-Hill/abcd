@@ -20,9 +20,9 @@ def make_tensor_dataset(cfg: Config, dataset: pl.DataFrame):
         inputs = df.select(features).to_torch(dtype=pl.Float32)
         if cfg.experiment.analysis == "propensity":
             propensity = df.select(cfg.index.propensity).to_torch(dtype=pl.Float32)
-            sample = (inputs, labels, propensity)
         else:
-            sample = (inputs, labels, None)
+            propensity = torch.tensor([1.0] * labels.size(0))
+        sample = (inputs, labels, propensity)
         data.append(sample)
     feature_columns = df.select(features).columns
     return data, feature_columns

@@ -143,15 +143,15 @@ class Network(LightningModule):
         self,
         outputs: torch.Tensor,
         labels: torch.Tensor,
-        propensity: torch.Tensor | None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        propensity: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         is_not_nan = ~torch.isnan(labels).flatten()
         outputs = outputs.flatten(0, 1)[is_not_nan]
         labels = labels.flatten()[is_not_nan]
-        if propensity is not None:
+        if self.propensity:
             propensity = propensity.flatten()[is_not_nan]
             return outputs, labels, propensity
-        return outputs, labels, None
+        return outputs, labels, propensity
 
     def autoencoder_step(self, step: str, batch: tuple[torch.Tensor, ...]):
         inputs, labels, propensity = batch
@@ -168,7 +168,7 @@ class Network(LightningModule):
         outputs: torch.Tensor = self(inputs)
         outputs, labels, propensity = self.drop_nan(outputs, labels, propensity)
         loss: torch.Tensor = self.criterion(outputs, labels.long())
-        if propensity is not None:
+        if self.propensity:
             loss = loss * propensity
         loss = loss.mean()
         self.log_dict({f"{step}_loss": loss}, prog_bar=True)
