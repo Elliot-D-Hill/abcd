@@ -10,6 +10,7 @@ from nanook.transform import impute, standardize
 
 from abcd.config import Config
 from abcd.constants import EVENTS, EVENTS_TO_VALUES
+from abcd.nlp import make_nlp_dataset
 
 
 def make_demographics(df: pl.LazyFrame) -> pl.LazyFrame:
@@ -127,7 +128,7 @@ def get_features(cfg: Config) -> pl.Expr:
             selection = cs.all()
         case "questions_mri":
             selection = cs.exclude(cfg.features.mh_p_cbcl.columns)
-        case "questions" | "questions_mri_all" | "site" | "propensity":
+        case "questions" | "questions_mri_all" | "site" | "propensity" | "llm":
             selection = cs.exclude(cfg.features.mh_p_cbcl.columns + brain_features)
         case "questions_symptoms":
             selection = cs.exclude(brain_features)
@@ -152,25 +153,12 @@ def collect_datasets(cfg: Config) -> pl.LazyFrame:
     return df
 
 
-def transform_dataset(cfg: Config) -> pl.LazyFrame:
-    df = collect_datasets(cfg=cfg)
-    metadata = pl.scan_parquet(cfg.filepaths.data.processed.metadata)
-    index_columns = cfg.index.join_on + [
-        cfg.index.split,
-        cfg.index.label,
-        cfg.index.propensity,
-    ]
-    labels = metadata.select(index_columns).drop(cfg.index.propensity)
-    df = labels.join(df, on=cfg.index.join_on, how="inner").sort(cfg.index.join_on)
-    columns = cs.numeric().exclude(index_columns)
+def transform_dataset(df: pl.LazyFrame, columns: pl.Expr, cfg: Config) -> pl.LazyFrame:
     train = columns.filter(pl.col(cfg.index.split).eq("train"))
     imputation = impute(columns, method="median", train=train)
     scale = standardize(columns, method="zscore", train=train)
     df = df.with_columns(scale)
     df = df.with_columns(imputation)
-    df = df.sort(cfg.index.join_on)
-    df = df.select(pl.col(index_columns), pl.exclude(index_columns))
-    df = df.drop(cs.string() & ~cs.by_name([cfg.index.split] + cfg.index.join_on))
     return df
 
 
@@ -188,11 +176,27 @@ def make_mri_dataset(cfg: Config, df: pl.DataFrame) -> None:
 
 
 def make_dataset(cfg: Config) -> None:
-    df = transform_dataset(cfg=cfg)
+    df = collect_datasets(cfg=cfg)
+    metadata = pl.scan_parquet(cfg.filepaths.data.processed.metadata)
+    index_columns = cfg.index.join_on + [
+        cfg.index.split,
+        cfg.index.label,
+        cfg.index.propensity,
+    ]
+    labels = metadata.select(index_columns).drop(cfg.index.propensity)
+    df = labels.join(df, on=cfg.index.join_on, how="inner").sort(cfg.index.join_on)
+    columns = cs.numeric().exclude(index_columns)
+    if cfg.experiment.analysis != "llm":
+        df = transform_dataset(df=df, columns=columns, cfg=cfg)
+    df = df.sort(cfg.index.join_on)
+    df = df.select(pl.col(index_columns), pl.exclude(index_columns))
+    df = df.drop(cs.string() & ~cs.by_name([cfg.index.split] + cfg.index.join_on))
     if cfg.experiment.analysis in {"mri", "questions_mri_all"}:
         df = df.collect(streaming=True)
         make_mri_dataset(cfg=cfg, df=df)
     else:
+        if cfg.experiment.analysis == "llm":
+            df = make_nlp_dataset(df, cfg=cfg)
         df = df.collect()
         for split, group in df.group_by(cfg.index.split):
             group.write_parquet(

@@ -68,6 +68,7 @@ class Model(BaseModel):
     num_layers: int
     dropout: float
     output_dim: int
+    llm_name: str
     input_dim: int = -1  # set at runtime
 
 
@@ -126,6 +127,7 @@ class Processed(BaseModel):
     dataset: Path
     metadata: Path
     subject_metadata: Path
+    variables: Path
 
 
 class Results(BaseModel):

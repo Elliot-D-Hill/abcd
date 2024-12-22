@@ -6,6 +6,7 @@ import torch
 from lightning import LightningDataModule
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
+from transformers import AutoTokenizer
 
 from abcd.config import Config
 
@@ -55,6 +56,28 @@ class FileDataset(Dataset):
         return features, labels, torch.tensor([1.0] * labels.size(0))
 
 
+class LLMDataset(Dataset):
+    def __init__(self, data, tokenizer):
+        self.data = data
+        self.tokenizer = tokenizer
+        self.separator = tokenizer.eos_token + " " + tokenizer.bos_token
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        instance: pl.DataFrame = self.data[idx]
+        sentences = instance.select(
+            sentence=pl.lit(self.tokenizer.bos_token + " ")
+            + pl.col("sentence")
+            .list.sample(fraction=1, shuffle=True)
+            .list.join(separator=self.separator)
+            + pl.lit(" " + self.tokenizer.eos_token)
+        )["sentence"].item()
+        label = instance["y_{t+1}"].to_torch().float()
+        return sentences, label
+
+
 def collate_fn(batch):
     features, labels, propensity = zip(*batch)
     features = pad_sequence(features, batch_first=True, padding_value=0)
@@ -63,18 +86,30 @@ def collate_fn(batch):
     return features, labels, propensity
 
 
-def init_datasets(splits: dict[str, pl.DataFrame | list[str]], cfg: Config):
-    match splits["train"], splits["val"], splits["test"]:
-        case list(), list(), list():
-            train = FileDataset(cfg=cfg, data=splits["train"])
-            val = FileDataset(cfg=cfg, data=splits["val"])
-            test = FileDataset(cfg=cfg, data=splits["test"])
-        case pl.DataFrame(), pl.DataFrame(), pl.DataFrame():
-            train = TimeSeriesDataset(cfg=cfg, data=splits["train"])
-            val = TimeSeriesDataset(cfg=cfg, data=splits["val"])
-            test = TimeSeriesDataset(cfg=cfg, data=splits["test"])
-        case _, _, _:
-            raise ValueError("Invalid dataset type")
+def llm_collate_fn(batch, tokenizer):
+    sentences, labels = zip(*batch)
+    inputs = tokenizer(sentences, return_tensors="pt", padding=True, truncation=True)
+    labels = torch.concat(labels)
+    return inputs, labels
+
+
+def init_datasets(splits: dict, cfg: Config):
+    if cfg.experiment.analysis in {"mri_all", "questions_mri_all"}:
+        train = FileDataset(cfg=cfg, data=splits["train"])
+        val = FileDataset(cfg=cfg, data=splits["val"])
+        test = FileDataset(cfg=cfg, data=splits["test"])
+    elif cfg.experiment.analysis == "llm":
+        tokenizer = AutoTokenizer.from_pretrained(
+            cfg.model.llm_name, clean_up_tokenization_spaces=True
+        )
+        train = LLMDataset(data=splits["train"], tokenizer=tokenizer)
+        val = LLMDataset(data=splits["val"], tokenizer=tokenizer)
+        test = LLMDataset(data=splits["test"], tokenizer=tokenizer)
+
+    else:
+        train = TimeSeriesDataset(cfg=cfg, data=splits["train"])
+        val = TimeSeriesDataset(cfg=cfg, data=splits["val"])
+        test = TimeSeriesDataset(cfg=cfg, data=splits["test"])
     return train, val, test
 
 
@@ -87,12 +122,15 @@ class ABCDDataModule(LightningDataModule):
         self.train = train
         self.val = val
         self.test = test
-        self.loader = partial(
-            DataLoader,
-            **cfg.dataloader.dict(),
-            collate_fn=collate_fn,
-        )
-        if not isinstance(train, FileDataset):
+        if cfg.experiment.analysis == "llm":
+            tokenizer = AutoTokenizer.from_pretrained(
+                cfg.model.llm_name, clean_up_tokenization_spaces=True
+            )
+            collate = partial(llm_collate_fn, tokenizer=tokenizer)
+        else:
+            collate = collate_fn
+        self.loader = partial(DataLoader, collate_fn=collate, **cfg.dataloader.dict())
+        if isinstance(train, TimeSeriesDataset):
             self.columns = train.columns
         else:
             self.columns = []

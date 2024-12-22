@@ -8,6 +8,7 @@ from torch import nn
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from torch.optim.sgd import SGD
 from torchvision.ops import MLP
+from transformers import AutoModel
 
 from abcd.config import Config, Model
 
@@ -124,12 +125,34 @@ class AutoEncoderClassifer(nn.Module):
         return output, decoding
 
 
+def masked_mean_pool(model_output, attention_mask: torch.Tensor):
+    token_embeddings: torch.Tensor = model_output[0]
+    expanded_mask = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+    mask_sum = torch.clamp(expanded_mask.sum(1), min=1e-9)
+    sentence_embedding = torch.sum(token_embeddings * expanded_mask, 1) / mask_sum
+    return sentence_embedding
+
+
+class LLM(nn.Module):
+    def __init__(self, model, output_dim: int):
+        super().__init__()
+        self.model = model
+        self.classifier = nn.Linear(self.model.config.hidden_size, output_dim)
+        self.criterion = nn.CrossEntropyLoss()
+
+    def forward(self, inputs):
+        embeddings = self.model(**inputs)
+        embedding = masked_mean_pool(embeddings, inputs["attention_mask"])
+        logits = self.classifier(embedding)
+        return logits
+
+
 class Network(LightningModule):
     def __init__(self, cfg: Config):
         super().__init__()
         self.save_hyperparameters(logger=False)
         self.model = make_architecture(cfg=cfg.model)
-        self.criterion = nn.CrossEntropyLoss(reduction="none")
+        self.cross_entropy = nn.CrossEntropyLoss(reduction="none")
         self.optimizer = SGD(self.model.parameters(), **cfg.optimizer.dict())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
         self.propensity = cfg.experiment.analysis == "propensity"
@@ -151,31 +174,20 @@ class Network(LightningModule):
             return outputs, labels, propensity
         return outputs, labels, propensity
 
-    def autoencoder_step(self, step: str, batch: tuple[torch.Tensor, ...]):
-        inputs, labels, propensity = batch
-        outputs, decoding = self(inputs)
-        outputs, labels, propensity = self.drop_nan(outputs, labels, propensity)
-        mse_loss = self.mse(inputs, decoding)
-        loss = self.criterion(outputs, labels.long())
-        loss = mse_loss + loss.mean()
-        self.log_dict({f"{step}_loss": loss}, prog_bar=True)
-        return loss
-
-    def classifer_step(self, step: str, batch: tuple[torch.Tensor, ...]):
-        inputs, labels, propensity = batch
-        outputs: torch.Tensor = self(inputs)
-        outputs, labels, propensity = self.drop_nan(outputs, labels, propensity)
-        loss: torch.Tensor = self.criterion(outputs, labels.long())
-        if self.propensity:
-            loss = loss * propensity
-        loss = loss.mean()
-        self.log_dict({f"{step}_loss": loss}, prog_bar=True)
-        return loss
-
     def step(self, step: str, batch: tuple[torch.Tensor, ...]):
+        inputs, labels, propensity = batch
+        outputs = self(inputs)
+        loss = 0.0
         if isinstance(self.model, AutoEncoderClassifer):
-            return self.autoencoder_step(step, batch)
-        return self.classifer_step(step, batch)
+            outputs, decoding = outputs
+            loss += self.mse(inputs, decoding)
+        outputs, labels, propensity = self.drop_nan(outputs, labels, propensity)
+        ce_loss = self.cross_entropy(outputs, labels.long())
+        if self.propensity:
+            ce_loss = ce_loss * propensity
+        loss += ce_loss.mean()
+        self.log_dict({f"{step}_loss": loss}, prog_bar=True)
+        return loss
 
     def training_step(self, batch, batch_idx):
         return self.step("train", batch)
@@ -236,7 +248,7 @@ def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
 
 
 def make_architecture(cfg: Model):
-    hparams = cfg.dict(exclude={"method"})
+    hparams = cfg.dict(exclude={"method", "llm_name"})
     sequence_model = partial(SequenceModel, **hparams)
     match cfg.method:
         case "linear":
@@ -251,6 +263,9 @@ def make_architecture(cfg: Model):
             return AutoEncoderClassifer(**hparams)
         case "transformer":
             return Transformer(num_heads=4, **hparams)
+        case "llm":
+            model = AutoModel.from_pretrained(cfg.llm_name)
+            return LLM(model, output_dim=cfg.output_dim)
         case _:
             raise ValueError(
                 f"Invalid method '{cfg.method}'. Choose from: 'rnn', 'lstm', 'mlp', 'autoencoder', or 'transformer'"

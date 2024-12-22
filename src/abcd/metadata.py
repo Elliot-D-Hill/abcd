@@ -114,8 +114,8 @@ def format_questions() -> pl.Expr:
     )
 
 
-def make_variable_df(cfg: Config, columns: list[list[str]]) -> pl.DataFrame:
-    dfs: list[pl.DataFrame] = []
+def make_variable_df(cfg: Config, columns: list[list[str]]) -> pl.LazyFrame:
+    dfs: list[pl.LazyFrame] = []
     for cols, (filename, metadata) in zip(columns, cfg.features.dict().items()):
         table_metadata = {"table": [], "dataset": [], "respondent": [], "variable": []}
         for column in cols:
@@ -123,12 +123,12 @@ def make_variable_df(cfg: Config, columns: list[list[str]]) -> pl.DataFrame:
             table_metadata["dataset"].append(metadata["name"])
             table_metadata["respondent"].append(metadata["respondent"])
             table_metadata["variable"].append(column)
-            metadata_df = pl.DataFrame(table_metadata)
+            metadata_df = pl.LazyFrame(table_metadata)
         dfs.append(metadata_df)
     return pl.concat(dfs)
 
 
-def remove_spanish(df: pl.DataFrame) -> pl.DataFrame:
+def remove_spanish(df: pl.LazyFrame) -> pl.LazyFrame:
     spanish = [
         "\\s*/\\s*[^;]+",
         " Sí",
@@ -146,13 +146,14 @@ def remove_spanish(df: pl.DataFrame) -> pl.DataFrame:
     ).with_columns(pl.col("response").str.replace("No No", "No"))
 
 
-def clean_variables(df: pl.DataFrame):
+def clean_variables(df: pl.LazyFrame):
     sex_question = (
         "What sex was the child assigned at birth, on the original birth certificate?"
     )
     sex_response = "1 = Male; 2 = Female; 3 = Intersex-Male; 4 = Intersex-Female; 999 = Don't know; 777 = Refuse to answer"
     df = (
-        df.with_columns(
+        df.filter(pl.col("variable").ne("eventname"))
+        .with_columns(
             pl.when(pl.col("table").eq("mh_p_cbcl"))
             .then(True)
             .otherwise(False)
@@ -163,15 +164,15 @@ def clean_variables(df: pl.DataFrame):
             pl.col("dataset").replace("Problem monitoring", "Parental monitoring"),
             pl.when(pl.col("variable").eq("demo_sex_v2"))
             .then(pl.lit(sex_response))
-            .when(pl.col("response").is_null() & pl.col("variable").ne("demo_sex_v2"))
-            .then(pl.lit("Continuous"))
-            .otherwise(pl.col("response"))
             .alias("response"),
             pl.when(pl.col("variable").eq("demo_sex_v2"))
             .then(pl.lit(sex_question))
             .otherwise(pl.col("question"))
             .alias("question"),
         )
+        .with_columns(pl.col("response").fill_null(value="1=1#2=2#3=3#4=4"))
+        .with_columns(pl.col("response").str.split("#"))
+        .explode("response")
         .filter(pl.col("variable").ne("src_subject_id"))
     )
     return df
@@ -180,16 +181,18 @@ def clean_variables(df: pl.DataFrame):
 def make_variable_metadata(cfg: Config, dfs: list[pl.LazyFrame]) -> None:
     columns = [df.collect_schema().names() for df in dfs]
     variables = make_variable_df(cfg=cfg, columns=columns)
-    df = pl.read_csv(
-        "data/raw/abcd_data_dictionary.csv",
-        columns=["table_name", "var_name", "var_label", "notes"],
-    ).rename(
-        {
-            "table_name": "table",
-            "var_name": "variable",
-            "var_label": "question",
-            "notes": "response",
-        }
+    columns = ["table_name", "var_name", "var_label", "notes"]
+    df = (
+        pl.scan_csv("data/raw/abcd_data_dictionary.csv")
+        .select(columns)
+        .rename(
+            {
+                "table_name": "table",
+                "var_name": "variable",
+                "var_label": "question",
+                "notes": "response",
+            }
+        )
     )
     df = variables.join(df, on=["table", "variable"], how="left", coalesce=True)
     df = df.with_columns(
@@ -199,6 +202,6 @@ def make_variable_metadata(cfg: Config, dfs: list[pl.LazyFrame]) -> None:
     df = clean_variables(df)
     df = df.with_columns(captialize("dataset"), captialize("question"))
     df = df.with_columns(rename_questions(), rename_datasets())
-    df = df.unique(subset=["variable"])
+    df = df.unique(subset=["variable", "response"])
     df = df.sort("dataset", "respondent", "variable")
-    df.write_parquet("data/raw/variable_metadata.parquet")
+    df.collect().write_parquet(cfg.filepaths.data.processed.variables)

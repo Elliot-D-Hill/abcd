@@ -42,7 +42,8 @@ def main():
         )
         splits = get_dataset(cfg=cfg)
         data_module = ABCDDataModule(splits=splits, cfg=cfg)
-        cfg.model.input_dim = data_module.train[0][0].shape[-1]
+        if cfg.experiment.analysis != "llm":
+            cfg.model.input_dim = data_module.train[0][0].shape[-1]
         print("Input dimension:", cfg.model.input_dim)
         if cfg.tune:
             tune_model(cfg=cfg, data_module=data_module)
