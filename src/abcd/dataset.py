@@ -53,7 +53,8 @@ class FileDataset(Dataset):
         data = np.load(filepath)
         features = torch.tensor(data["features"], dtype=torch.float32)
         labels = torch.tensor(data["label"], dtype=torch.float32)
-        return features, labels, torch.tensor([1.0] * labels.size(0))
+        dummy_propensity = torch.tensor([1.0] * labels.size(0))
+        return features, labels, dummy_propensity
 
 
 class LLMDataset(Dataset):
@@ -74,8 +75,9 @@ class LLMDataset(Dataset):
             .list.join(separator=self.separator)
             + pl.lit(" " + self.tokenizer.eos_token)
         )["sentence"].item()
-        label = instance["y_{t+1}"].to_torch().float()
-        return sentences, label
+        labels = instance["y_{t+1}"].to_torch().float()
+        dummy_propensity = torch.tensor([1.0] * labels.size(0))
+        return sentences, labels, dummy_propensity
 
 
 def collate_fn(batch):
@@ -87,10 +89,11 @@ def collate_fn(batch):
 
 
 def llm_collate_fn(batch, tokenizer):
-    sentences, labels = zip(*batch)
+    sentences, labels, propensity = zip(*batch)
     inputs = tokenizer(sentences, return_tensors="pt", padding=True, truncation=True)
     labels = torch.concat(labels)
-    return inputs, labels
+    propensity = torch.concat(propensity)
+    return inputs, labels, propensity
 
 
 def init_datasets(splits: dict, cfg: Config):

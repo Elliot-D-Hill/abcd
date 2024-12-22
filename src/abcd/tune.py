@@ -11,14 +11,18 @@ from abcd.model import Network, make_trainer
 
 def make_params(trial: optuna.Trial, cfg: Config):
     hparams = cfg.hyperparameters
-    method_index = trial.suggest_int(**hparams.model.method)
-    cfg.model.method = cfg.tuner.methods[method_index]
-    cfg.model.hidden_dim = trial.suggest_int(**hparams.model.hidden_dim)
-    cfg.model.num_layers = trial.suggest_int(**hparams.model.num_layers)
-    cfg.model.dropout = trial.suggest_float(**hparams.model.dropout)
     cfg.optimizer.lr = trial.suggest_float(**hparams.optimizer.lr)
+    cfg.optimizer.momentum = trial.suggest_float(**hparams.optimizer.momentum)
     cfg.optimizer.weight_decay = trial.suggest_float(**hparams.optimizer.weight_decay)
     cfg.trainer.max_epochs = trial.suggest_int(**hparams.trainer.max_epochs)
+    if cfg.experiment.analysis != "llm":
+        method_index = trial.suggest_int(**hparams.model.method)
+        cfg.model.method = cfg.tuner.methods[method_index]
+        cfg.model.hidden_dim = trial.suggest_int(**hparams.model.hidden_dim)
+        cfg.model.num_layers = trial.suggest_int(**hparams.model.num_layers)
+        cfg.model.dropout = trial.suggest_float(**hparams.model.dropout)
+    else:
+        cfg.model.method = "llm"
     return cfg
 
 

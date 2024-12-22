@@ -157,6 +157,7 @@ class Network(LightningModule):
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
         self.propensity = cfg.experiment.analysis == "propensity"
         self.mse = nn.MSELoss()
+        self.llm = cfg.experiment.analysis != "llm"
 
     def forward(self, inputs):
         return self.model(inputs)
@@ -181,7 +182,8 @@ class Network(LightningModule):
         if isinstance(self.model, AutoEncoderClassifer):
             outputs, decoding = outputs
             loss += self.mse(inputs, decoding)
-        outputs, labels, propensity = self.drop_nan(outputs, labels, propensity)
+        if self.llm:
+            outputs, labels, propensity = self.drop_nan(outputs, labels, propensity)
         ce_loss = self.cross_entropy(outputs, labels.long())
         if self.propensity:
             ce_loss = ce_loss * propensity
