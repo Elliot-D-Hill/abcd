@@ -2,10 +2,7 @@ from functools import partial
 
 import torch
 from lightning import LightningModule, Trainer
-from lightning.pytorch.callbacks import (
-    ModelCheckpoint,
-    RichProgressBar,
-)
+from lightning.pytorch.callbacks import ModelCheckpoint, RichProgressBar
 from lightning.pytorch.loggers import TensorBoardLogger
 from torch import nn
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
