@@ -14,7 +14,7 @@ from abcd.constants import EVENTS, EVENTS_TO_VALUES
 
 def make_demographics(df: pl.LazyFrame) -> pl.LazyFrame:
     education = cs.by_name("demo_prnt_ed_v2", "demo_prtnr_ed_v2")
-    sex = "demo_sex_v2"  # 1 = male, 0 = female
+    sex = "demo_sex_v2"
     df = (
         df.with_columns(pl.max_horizontal(education).alias("parent_highest_education"))
         .drop(education)
@@ -93,7 +93,7 @@ def get_mri_datasets(cfg: Config) -> list[pl.LazyFrame]:
 
 
 def get_data(cfg: Config) -> list[pl.LazyFrame]:
-    if cfg.experiment.analysis == "mri":
+    if cfg.experiment.analysis == "mri_all":
         data = get_mri_datasets(cfg)
     elif cfg.experiment.analysis == "questions_mri_all":
         social = get_datasets(cfg)
@@ -124,6 +124,8 @@ def get_features(cfg: Config) -> pl.Expr:
     brain_features = get_brain_features(cfg)
     match cfg.experiment.analysis:
         case "mri":
+            selection = cs.by_name(brain_features)
+        case "mri_all":
             selection = cs.all()
         case "questions_mri":
             selection = cs.exclude(cfg.features.mh_p_cbcl.columns)
@@ -160,8 +162,10 @@ def transform_dataset(cfg: Config) -> pl.LazyFrame:
         cfg.index.label,
         cfg.index.propensity,
     ]
-    labels = metadata.select(index_columns).drop(cfg.index.propensity)
-    df = labels.join(df, on=cfg.index.join_on, how="inner").sort(cfg.index.join_on)
+    labels = metadata.select(index_columns)
+    if cfg.index.propensity in df.collect_schema().names():
+        df = df.drop(cfg.index.propensity)
+    df = labels.join(df, on=cfg.index.join_on, how="left").sort(cfg.index.join_on)
     columns = cs.numeric().exclude(index_columns)
     train = columns.filter(pl.col(cfg.index.split).eq("train"))
     imputation = impute(columns, method="median", train=train)
@@ -189,7 +193,7 @@ def make_mri_dataset(cfg: Config, df: pl.DataFrame) -> None:
 
 def make_dataset(cfg: Config) -> None:
     df = transform_dataset(cfg=cfg)
-    if cfg.experiment.analysis in {"mri", "questions_mri_all"}:
+    if cfg.experiment.analysis in {"mri_all", "questions_mri_all"}:
         df = df.collect(streaming=True)
         make_mri_dataset(cfg=cfg, df=df)
     else:
@@ -203,7 +207,7 @@ def make_dataset(cfg: Config) -> None:
 def get_dataset(cfg: Config) -> dict[str, pl.DataFrame | list[str]]:
     if cfg.regenerate:
         make_dataset(cfg=cfg)
-    if cfg.experiment.analysis in {"mri", "questions_mri_all"}:
+    if cfg.experiment.analysis in {"mri_all", "questions_mri_all"}:
         train = glob(str(cfg.filepaths.data.analytic.path / "train/*.npz"))
         val = glob(str(cfg.filepaths.data.analytic.path / "val/*.npz"))
         test = glob(str(cfg.filepaths.data.analytic.path / "test/*.npz"))
