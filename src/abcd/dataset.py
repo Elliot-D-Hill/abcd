@@ -73,7 +73,7 @@ def make_llm_dataset(df: pl.DataFrame):
     print("Making LLM dataset")
     data = []
     for i in range(df.height):
-        sentences = df["sentence"].to_list()[0]
+        sentences = df[i]["sentence"].to_list()[0]
         sentences = add_bos_eos(sentences)
         labels = df[i]["y_{t+1}"].to_torch().float()
         dummy_propensity = torch.tensor([1.0] * labels.size(0))
