@@ -154,7 +154,7 @@ def shap_plot(
         k + " cbcl syndrome scale (t-score)": v for k, v in cbcl_names.items()
     }
     df = pl.read_parquet(shap_path).with_columns(
-        (pl.col("Respondent") + ": " + pl.col("dataset")).alias("Dataset"),
+        (pl.col("respondent") + ": " + pl.col("dataset")).alias("dataset"),
         pl.col("question").replace(cbcl_names),
     )
     n_bootstraps = 100
@@ -162,8 +162,8 @@ def shap_plot(
     for _ in range(n_bootstraps):
         resampled = (
             df.sample(fraction=1.0, with_replacement=True)
-            .group_by("Respondent", "question")
-            .agg(pl.col("Dataset").first(), pl.col("shap_value").sum())
+            .group_by("respondent", "question")
+            .agg(pl.col("dataset").first(), pl.col("shap_value").sum())
         )
         dfs.append(resampled)
     df = pl.concat(dfs)
@@ -175,6 +175,7 @@ def shap_plot(
         .to_list()
     )
     df = df.filter(pl.col("question").is_in(order))
+    df = df.rename({"dataset": "Dataset"})
     g = sns.pointplot(
         data=df.to_pandas(),
         x="shap_value",
@@ -312,13 +313,13 @@ def plot(cfg: Config):
     abs_shap_sum(filepath=cfg.filepaths.data.results.shap_values)
     group_shap_coef(filepath=cfg.filepaths.data.results.group_shap_coef)
     shap_scatter(filepath=cfg.filepaths.data.results.shap_values)
-    shap_plot(
-        filepath="data/supplement/figures/supplementary_figure_2",
-        shap_path=cfg.filepaths.data.results.shap_values,
-        textwrap_width=75,
-        y_axis_label="CBCL syndrome scale (t-score)",
-        figsize=(16, 8),
-    )
+    # shap_plot(
+    #     filepath="data/supplement/figures/supplementary_figure_2",
+    #     shap_path=cfg.filepaths.data.results.shap_values,
+    #     textwrap_width=75,
+    #     y_axis_label="CBCL syndrome scale (t-score)",
+    #     figsize=(16, 8),
+    # )
     shap_plot(
         filepath="data/supplement/figures/supplementary_figure_3",
         shap_path=cfg.filepaths.data.results.shap_values,

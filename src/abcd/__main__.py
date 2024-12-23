@@ -54,6 +54,9 @@ def main():
     if cfg.tables:
         make_tables(cfg=cfg)
     if cfg.plot:
+        cfg = get_config(
+            path="config.toml", factor_model="within_event", analysis="questions"
+        )
         plot(cfg=cfg)
 
 
