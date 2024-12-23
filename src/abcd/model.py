@@ -8,9 +8,9 @@ from torch import nn
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from torch.optim.sgd import SGD
 from torchvision.ops import MLP
-from transformers import AutoModel
+from transformers import BigBirdForSequenceClassification
 
-from abcd.config import Config, Model
+from abcd.config import Config
 
 
 class MultiLayerPerceptron(nn.Module):
@@ -125,73 +125,62 @@ class AutoEncoderClassifer(nn.Module):
         return output, decoding
 
 
-def masked_mean_pool(model_output, attention_mask: torch.Tensor):
-    token_embeddings: torch.Tensor = model_output[0]
-    expanded_mask = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-    mask_sum = torch.clamp(expanded_mask.sum(1), min=1e-9)
-    sentence_embedding = torch.sum(token_embeddings * expanded_mask, 1) / mask_sum
-    return sentence_embedding
-
-
 class LLM(nn.Module):
     def __init__(self, model, output_dim: int):
         super().__init__()
         self.model = model
         self.classifier = nn.Linear(self.model.config.hidden_size, output_dim)
-        self.criterion = nn.CrossEntropyLoss()
 
     def forward(self, inputs):
-        embeddings = self.model(**inputs)
-        embedding = masked_mean_pool(embeddings, inputs["attention_mask"])
-        logits = self.classifier(embedding)
-        return logits
+        return self.model(**inputs).logits
+
+
+def drop_nan(
+    outputs: torch.Tensor, labels: torch.Tensor, propensity: torch.Tensor
+) -> tuple[torch.Tensor, ...]:
+    is_not_nan = ~torch.isnan(labels).flatten()
+    outputs = outputs.flatten(0, 1)
+    outputs = outputs[is_not_nan]
+    labels = labels.flatten()
+    labels = labels[is_not_nan]
+    propensity = propensity.flatten()[is_not_nan]
+    return outputs, labels, propensity
 
 
 class Network(LightningModule):
     def __init__(self, cfg: Config):
         super().__init__()
+        print("Initializing Network")
         self.save_hyperparameters(logger=False)
-        self.model = make_architecture(cfg=cfg.model)
+        self.model = make_architecture(cfg=cfg)
         self.cross_entropy = nn.CrossEntropyLoss(reduction="none")
         self.optimizer = SGD(self.model.parameters(), **cfg.optimizer.dict())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
         self.propensity = cfg.experiment.analysis == "propensity"
+        self.llm = cfg.experiment.analysis == "llm"
         self.mse = nn.MSELoss()
-        self.llm = cfg.experiment.analysis != "llm"
 
     def forward(self, inputs):
         return self.model(inputs)
 
-    def drop_nan(
-        self, outputs: torch.Tensor, labels: torch.Tensor, propensity: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        is_not_nan = ~torch.isnan(labels).flatten()
-        outputs = outputs.flatten(0, 1)
-        outputs = outputs[is_not_nan]
-        labels = labels.flatten()
-        labels = labels[is_not_nan]
-        if self.propensity:
-            propensity = propensity.flatten()[is_not_nan]
-            return outputs, labels, propensity
-        return outputs, labels, propensity
-
-    def step(self, step: str, batch: tuple[torch.Tensor, ...]):
+    def step(self, step: str, batch):
         inputs, labels, propensity = batch
         outputs = self(inputs)
         loss = 0.0
         if isinstance(self.model, AutoEncoderClassifer):
             outputs, decoding = outputs
             loss += self.mse(inputs, decoding)
-        if self.llm:
-            outputs, labels, propensity = self.drop_nan(outputs, labels, propensity)
+        if not self.llm:
+            outputs, labels, propensity = drop_nan(outputs, labels, propensity)
         ce_loss = self.cross_entropy(outputs, labels.long())
         if self.propensity:
-            ce_loss = ce_loss * propensity
+            ce_loss *= propensity
         loss += ce_loss.mean()
         self.log_dict({f"{step}_loss": loss}, prog_bar=True)
         return loss
 
     def training_step(self, batch, batch_idx):
+        print(batch_idx)
         return self.step("train", batch)
 
     def validation_step(self, batch, batch_idx):
@@ -243,18 +232,34 @@ def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
         log_every_n_steps=cfg.logging.log_every_n_steps,
         fast_dev_run=cfg.fast_dev_run,
         check_val_every_n_epoch=1,
+        val_check_interval=0.1,
         enable_checkpointing=checkpoint,
         **cfg.trainer.dict(),
     )
     return trainer
 
 
-def make_architecture(cfg: Model):
-    hparams = cfg.dict(exclude={"method", "llm_name"})
+def get_llm(cfg: Config):
+    if (cfg.filepaths.data.models.model / "config.json").exists():
+        model = BigBirdForSequenceClassification.from_pretrained(
+            cfg.filepaths.data.models.model, num_labels=cfg.model.output_dim
+        )
+    else:
+        model = BigBirdForSequenceClassification.from_pretrained(
+            cfg.model.llm_name, num_labels=cfg.model.output_dim
+        )
+        model.save_pretrained(cfg.filepaths.data.models.model)
+    return model
+
+
+def make_architecture(cfg: Config):
+    hparams = cfg.model.dict(exclude={"method", "llm_name"})
     sequence_model = partial(SequenceModel, **hparams)
-    match cfg.method:
+    match cfg.model.method:
         case "linear":
-            return nn.Linear(in_features=cfg.input_dim, out_features=cfg.output_dim)
+            return nn.Linear(
+                in_features=cfg.model.input_dim, out_features=cfg.model.output_dim
+            )
         case "mlp":
             return MultiLayerPerceptron(**hparams)
         case "rnn":
@@ -266,9 +271,9 @@ def make_architecture(cfg: Model):
         case "transformer":
             return Transformer(num_heads=4, **hparams)
         case "llm":
-            model = AutoModel.from_pretrained(cfg.llm_name)
-            return LLM(model, output_dim=cfg.output_dim)
+            model = get_llm(cfg=cfg)
+            return LLM(model=model, output_dim=cfg.model.output_dim)
         case _:
             raise ValueError(
-                f"Invalid method '{cfg.method}'. Choose from: 'rnn', 'lstm', 'mlp', 'autoencoder', or 'transformer'"
+                f"Invalid method '{cfg.model.method}'. Choose from: 'rnn', 'lstm', 'mlp', 'autoencoder', or 'transformer'"
             )

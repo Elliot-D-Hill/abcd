@@ -1,3 +1,4 @@
+import random
 from functools import partial
 
 import numpy as np
@@ -6,7 +7,7 @@ import torch
 from lightning import LightningDataModule
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
-from transformers import AutoTokenizer
+from transformers import BigBirdTokenizer
 
 from abcd.config import Config
 
@@ -57,27 +58,43 @@ class FileDataset(Dataset):
         return features, labels, dummy_propensity
 
 
+# df = df.select(
+#     pl.col("sentence")
+#     .list.sample(fraction=1, shuffle=True)
+#     .list.join(separator="</s> <s>")
+# )
+
+
+def add_bos_eos(sentences: list[str]) -> str:
+    return "</s> " + " </s> <s> ".join(sentences) + " <s>"
+
+
+def make_llm_dataset(df: pl.DataFrame):
+    print("Making LLM dataset")
+    data = []
+    for i in range(df.height):
+        sentences = df["sentence"].to_list()[0]
+        sentences = add_bos_eos(sentences)
+        labels = df[i]["y_{t+1}"].to_torch().float()
+        dummy_propensity = torch.tensor([1.0] * labels.size(0))
+        sample = (sentences, labels, dummy_propensity)
+        data.append(sample)
+    return data
+
+
 class LLMDataset(Dataset):
-    def __init__(self, data, tokenizer):
-        self.data = data
-        self.tokenizer = tokenizer
-        self.separator = tokenizer.eos_token + " " + tokenizer.bos_token
+    def __init__(self, data):
+        self.data = make_llm_dataset(data)
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
-        instance: pl.DataFrame = self.data[idx]
-        sentences = instance.select(
-            sentence=pl.lit(self.tokenizer.bos_token + " ")
-            + pl.col("sentence")
-            .list.sample(fraction=1, shuffle=True)
-            .list.join(separator=self.separator)
-            + pl.lit(" " + self.tokenizer.eos_token)
-        )["sentence"].item()
-        labels = instance["y_{t+1}"].to_torch().float()
-        dummy_propensity = torch.tensor([1.0] * labels.size(0))
-        return sentences, labels, dummy_propensity
+        sentences, labels, propensity = self.data[idx]
+        sentences = sentences.split(" </s> <s> ")
+        random.shuffle(sentences)
+        sentences = add_bos_eos(sentences)
+        return sentences, labels, propensity
 
 
 def collate_fn(batch):
@@ -102,18 +119,27 @@ def init_datasets(splits: dict, cfg: Config):
         val = FileDataset(cfg=cfg, data=splits["val"])
         test = FileDataset(cfg=cfg, data=splits["test"])
     elif cfg.experiment.analysis == "llm":
-        tokenizer = AutoTokenizer.from_pretrained(
-            cfg.model.llm_name, clean_up_tokenization_spaces=True
-        )
-        train = LLMDataset(data=splits["train"], tokenizer=tokenizer)
-        val = LLMDataset(data=splits["val"], tokenizer=tokenizer)
-        test = LLMDataset(data=splits["test"], tokenizer=tokenizer)
-
+        train = LLMDataset(data=splits["train"])
+        val = LLMDataset(data=splits["val"])
+        test = LLMDataset(data=splits["test"])
     else:
         train = TimeSeriesDataset(cfg=cfg, data=splits["train"])
         val = TimeSeriesDataset(cfg=cfg, data=splits["val"])
         test = TimeSeriesDataset(cfg=cfg, data=splits["test"])
     return train, val, test
+
+
+def get_tokenizer(cfg: Config):
+    if (cfg.filepaths.data.models.model / "tokenizer_config.json").exists():
+        tokenizer = BigBirdTokenizer.from_pretrained(
+            cfg.filepaths.data.models.model, clean_up_tokenization_spaces=True
+        )
+    else:
+        tokenizer = BigBirdTokenizer.from_pretrained(
+            cfg.model.llm_name, clean_up_tokenization_spaces=True
+        )
+        tokenizer.save_pretrained(cfg.filepaths.data.models.model)
+    return tokenizer
 
 
 class ABCDDataModule(LightningDataModule):
@@ -126,9 +152,7 @@ class ABCDDataModule(LightningDataModule):
         self.val = val
         self.test = test
         if cfg.experiment.analysis == "llm":
-            tokenizer = AutoTokenizer.from_pretrained(
-                cfg.model.llm_name, clean_up_tokenization_spaces=True
-            )
+            tokenizer = get_tokenizer(cfg=cfg)
             collate = partial(llm_collate_fn, tokenizer=tokenizer)
         else:
             collate = collate_fn

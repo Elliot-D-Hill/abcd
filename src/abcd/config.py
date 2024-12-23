@@ -143,11 +143,16 @@ class Results(BaseModel):
     group_shap_coef: Path
 
 
+class Models(BaseModel):
+    model: Path
+
+
 class Data(BaseModel):
     raw: Raw
     processed: Processed
     analytic: Splits
     results: Results
+    models: Models
 
 
 class Filepaths(BaseModel):
