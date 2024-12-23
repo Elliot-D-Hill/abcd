@@ -10,6 +10,8 @@ dependencies:
   - pytorch-cuda=12.4
   - torchvision
   - torchmetrics
+  - transformers
+  - sentencepiece
   - tensorboard
   - pydantic
   - polars

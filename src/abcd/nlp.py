@@ -19,7 +19,6 @@ def format_variables(filepath: Path | str) -> pl.LazyFrame:
     df = df.with_columns(pl.col("response").str.split(";"))
     df = df.explode("response")
     df = df.with_columns(
-        # pl.when(pl.col("response").is_in(["1", "2", "3", "4"]))
         pl.col("response")
         .str.replace("\\s*=\\s*", "=")
         .str.split("=")
@@ -71,6 +70,5 @@ def make_nlp_dataset(df: pl.LazyFrame, cfg: Config) -> pl.LazyFrame:
     )
     df = df.join(variables, on=["variable", "value"], how="inner")
     df = factorize(df)
-    print(df.collect().filter(pl.col("variable").eq("total_core")).sort("value"))
     df = df.group_by(by).agg(pl.col("sentence")).sort(by[:-1])
     return df
