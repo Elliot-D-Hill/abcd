@@ -2,8 +2,7 @@
 
 ## Methods diagram
 
-![figure_1](https://github.com/user-attachments/assets/d404b58d-39a3-4ef9-b621-44c7ac049bc4)
-
+![figure_1](https://github.com/user-attachments/assets/91f51fba-1ebf-4072-b54f-e1454b182d44)
 
 ## Model performance
 
