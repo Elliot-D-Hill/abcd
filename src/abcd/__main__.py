@@ -17,8 +17,7 @@ from abcd.tables import make_tables
 from abcd.tune import tune_model
 
 
-def make_experiment(cfg: Experiment):
-    analyses = product(cfg.analyses, cfg.factor_models)
+def make_tqdm(analyses, cfg: Experiment):
     return tqdm(analyses, total=len(cfg.analyses) * len(cfg.factor_models))
 
 
@@ -32,7 +31,8 @@ def main():
     torch.set_float32_matmul_precision("medium")
     pl.set_random_seed(cfg.random_seed)
     make_metadata(cfg=cfg)
-    experiment = make_experiment(cfg=cfg.experiment)
+    analyses = product(cfg.experiment.analyses, cfg.experiment.factor_models)
+    experiment = make_tqdm(analyses, cfg=cfg.experiment)
     print(experiment)
     for analysis, factor_model in experiment:
         if not any([cfg.regenerate, cfg.evaluate, cfg.tune, cfg.importance]):

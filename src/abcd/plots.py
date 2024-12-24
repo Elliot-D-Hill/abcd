@@ -13,8 +13,8 @@ FORMAT = "pdf"
 DPI = 300
 
 
-def quartile_curves():
-    df = pl.read_parquet("data/results/metrics/curves.parquet")
+def quartile_curves(filepath: Path | str):
+    df = pl.read_parquet(filepath)
     df = (
         df.filter(
             pl.col("Quartile at t+1").eq(4)
@@ -66,11 +66,11 @@ def quartile_curves():
             )
         ax.set_ylim(0.0, 1.05)
     plt.subplots_adjust(hspace=0.3)  # , wspace=0.4
-    plt.savefig(f"data/figures/figure_1.{FORMAT}", format=FORMAT)
+    plt.savefig(f"data/figures/figure_2.{FORMAT}", format=FORMAT)
 
 
-def abs_shap_sum(filepath: Path):
-    df = pl.read_parquet(filepath)
+def abs_shap_sum(lf: pl.LazyFrame):
+    df = lf.collect()
     order = (
         df.group_by("respondent", "dataset")
         .agg(pl.col("shap_value").sum().abs())
@@ -102,7 +102,7 @@ def abs_shap_sum(filepath: Path):
     plt.axvline(x=0, color="black", linestyle="--")
     plt.tight_layout()
     sns.move_legend(g, "lower right")
-    plt.savefig(f"data/figures/figure_2.{FORMAT}", format=FORMAT, bbox_inches="tight")
+    plt.savefig(f"data/figures/figure_3.{FORMAT}", format=FORMAT, bbox_inches="tight")
 
 
 def analysis_comparison():
@@ -135,8 +135,8 @@ def analysis_comparison():
 
 
 def shap_plot(
+    lf: pl.LazyFrame,
     filepath: str,
-    shap_path: Path,
     textwrap_width: int,
     y_axis_label: str,
     figsize: tuple[int, int],
@@ -156,14 +156,14 @@ def shap_plot(
     cbcl_names = {
         k + " cbcl syndrome scale (t-score)": v for k, v in cbcl_names.items()
     }
-    df = pl.read_csv(
-        "data/analyses/within_event/symptoms/results/shap_values.csv"
-    ).rename({"Respondent": "respondent"})
+
+    lf.rename({"Respondent": "respondent"})
     # df = pl.read_parquet(shap_path)
-    df = df.with_columns(pl.col("question").replace(cbcl_names))
-    df = df.with_columns(
+    lf = lf.with_columns(pl.col("question").replace(cbcl_names))
+    lf = lf.with_columns(
         (pl.col("respondent") + ": " + pl.col("dataset")).alias("dataset"),
     )
+    df = lf.collect()
     n_bootstraps = 100
     dfs = []
     for _ in range(n_bootstraps):
@@ -243,13 +243,13 @@ def p_factor_model_comparison():
     )
 
 
-def shap_scatter(filepath: Path):
+def shap_scatter(lf: pl.LazyFrame):
     sns.set_theme(context="paper", style="darkgrid", palette="deep", font_scale=2.5)
     plt.figure(figsize=(6, 8))
-    df = pl.read_parquet(filepath)
     # remove one outlier from Family mental health history
-    df = df.filter(pl.col("feature_value") < 20)
-    df = df.filter(pl.col("dataset") != "Follow-up event")
+    lf = lf.filter(pl.col("feature_value") < 20)
+    lf = lf.filter(pl.col("dataset") != "Follow-up event")
+    df = lf.collect()
     order = (
         df.group_by("dataset")
         .agg(pl.col("shap_value").sum().abs())
@@ -288,7 +288,7 @@ def shap_scatter(filepath: Path):
     for ax, col_name in zip(g.axes.flat, g.col_names):
         ax.set_xlabel(col_name)
     plt.savefig(
-        f"data/supplement/figures/supplementary_figure_6.{FORMAT}",
+        f"data/supplement/figures/supplementary_figure_5.{FORMAT}",
         format=FORMAT,
         bbox_inches="tight",
         dpi=DPI,
@@ -300,13 +300,15 @@ def plot():
     cfg = get_config(
         path="config.toml", factor_model="within_event", analysis="questions"
     )
-    # quartile_curves()
+    # quartile_curves("data/results/all/curves.parquet")
+    quartile_curves(filepath="data/results/metrics/curves.parquet")
     # analysis_comparison()
-    abs_shap_sum(filepath=cfg.filepaths.data.results.shap_values)
-    shap_scatter(filepath=cfg.filepaths.data.results.shap_values)
+    shap_values = pl.scan_parquet(cfg.filepaths.data.results.shap.shap_values)
+    abs_shap_sum(shap_values)
+    shap_scatter(shap_values)
     shap_plot(
+        lf=shap_values,
         filepath="data/supplement/figures/supplementary_figure_3",
-        shap_path=cfg.filepaths.data.results.shap_values,
         textwrap_width=75,
         y_axis_label="Question",
         figsize=(14, 8),
@@ -314,9 +316,12 @@ def plot():
     # cfg = get_config(
     #     path="config.toml", factor_model="within_event", analysis="symptoms"
     # )
+    # symptom_shap_values = pl.scan_parquet(
+    #     "data/analyses/within_event/symptoms/results/shap_values.csv"
+    # )
     # shap_plot(
+    #     lf=symptom_shap_values,
     #     filepath="data/supplement/figures/supplementary_figure_2",
-    #     shap_path=cfg.filepaths.data.results.shap_values,
     #     textwrap_width=75,
     #     y_axis_label="CBCL syndrome scale",
     #     figsize=(9, 5),

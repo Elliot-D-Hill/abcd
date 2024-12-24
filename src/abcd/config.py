@@ -128,17 +128,27 @@ class Processed(BaseModel):
     subject_metadata: Path
 
 
-class Results(BaseModel):
+class EvalMetrics(BaseModel):
     metrics: Path
+    curves: Path
+    sens_spec: Path
+
+
+class Shap(BaseModel):
+    shap_values: Path
+    group_shap_values: Path
+    shap_coef: Path
+    group_shap_coef: Path
+
+
+class Results(BaseModel):
     checkpoints: Path
     best_model: Path
     study: Path
     logs: Path
     predictions: Path
-    shap_values: Path
-    group_shap_values: Path
-    shap_coef: Path
-    group_shap_coef: Path
+    eval: EvalMetrics
+    shap: Shap
 
 
 class Data(BaseModel):
@@ -216,10 +226,16 @@ def update_paths(new_path: Path, cfg: Config) -> Config:
         analytic[name] = new_filepath
     cfg.filepaths.data.analytic = Splits(**analytic)
     results = deepcopy(cfg.filepaths.data.results.dict())
-    for name, path in results.items():
-        new_filepath = new_path / "results" / path
-        new_filepath.parent.mkdir(parents=True, exist_ok=True)
-        results[name] = new_filepath
+    for name, path in results.copy().items():
+        if isinstance(path, Path):
+            new_filepath = new_path / "results" / path
+            new_filepath.parent.mkdir(parents=True, exist_ok=True)
+            results[name] = new_filepath
+        if (name in ["eval", "shap"]) and isinstance(path, dict):
+            for subkey, subval in list(path.items()):
+                new_filepath = new_path / "results" / name / subval
+                new_filepath.parent.mkdir(parents=True, exist_ok=True)
+                results[name][subkey] = new_filepath
     cfg.filepaths.data.results = Results(**results)
     return cfg
 

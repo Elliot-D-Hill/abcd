@@ -27,10 +27,44 @@ def make_predictions(cfg: Config, model: Network, data_module: ABCDDataModule):
     metadata = pl.read_csv(cfg.filepaths.data.raw.metadata)
     test_metadata = metadata.filter(pl.col("Split").eq("test"))
     df = pl.DataFrame({"output": outputs.cpu().numpy(), "label": labels.cpu().numpy()})
-    return pl.concat([test_metadata, df], how="horizontal")
+    df = pl.concat([test_metadata, df], how="horizontal")
+    df = df.with_columns(
+        pl.when(pl.col("Quartile at t").eq(4))
+        .then(pl.lit("Persistence"))
+        .otherwise(pl.lit("Conversion"))
+        .alias("High-risk scenario")
+    )
+    variables = [
+        "High-risk scenario",
+        "Sex",
+        "Race",
+        "Age",
+        "Follow-up event",
+        "ADI quartile",
+        "Event year",
+    ]
+    df = df.unpivot(
+        index=["output", "label", "Quartile at t", "Quartile at t+1"],
+        on=variables,
+        variable_name="Variable",
+        value_name="Group",
+    )
+    return df
 
 
-def get_predictions(df: pl.DataFrame):
+def get_predictions(cfg: Config, data_module: ABCDDataModule) -> pl.DataFrame:
+    model = get_model(cfg=cfg)
+    model.to(cfg.device)
+    # FIXME cfg.filepaths.data.results.eval.mkdir(parents=True, exist_ok=True)
+    if cfg.predict or not cfg.filepaths.data.results.predictions.is_file():
+        df = make_predictions(cfg=cfg, model=model, data_module=data_module)
+        df.write_parquet(cfg.filepaths.data.results.predictions)
+    else:
+        df = pl.read_parquet(cfg.filepaths.data.results.predictions)
+    return df
+
+
+def get_outputs_labels(df: pl.DataFrame):
     outputs = torch.tensor(df["output"].to_list(), dtype=torch.float)
     labels = torch.tensor(df["label"].to_numpy(), dtype=torch.long)
     return outputs, labels
@@ -50,7 +84,7 @@ def make_curve_df(df, name, quartile, x, y):
 
 
 def make_curve(df: pl.DataFrame, curve: Callable, name: str):
-    outputs, labels = get_predictions(df)
+    outputs, labels = get_outputs_labels(df)
     task = "multiclass"
     num_classes = outputs.shape[-1]
     if name == "ROC":
@@ -89,7 +123,7 @@ def make_metrics(df: pl.DataFrame, n_bootstraps: int):
                 "value": [],
             }
         )
-    outputs, labels = get_predictions(df)
+    outputs, labels = get_outputs_labels(df)
     auroc = MulticlassAUROC(num_classes=outputs.shape[-1], average="none")
     ap = MulticlassAveragePrecision(num_classes=outputs.shape[-1], average="none")
     bootstrapped_auroc = bootstrap_metric(
@@ -117,7 +151,7 @@ def calc_sensitivity_and_specificity(df: pl.DataFrame):
     df = df.filter(
         pl.col("Variable").eq("High-risk scenario") & pl.col("Group").eq("Conversion")
     )
-    outputs, labels = get_predictions(df=df)
+    outputs, labels = get_outputs_labels(df=df)
     min_sensitivity = 0.5
     specificity_metric = MulticlassSpecificityAtSensitivity(
         num_classes=outputs.shape[-1], min_sensitivity=min_sensitivity
@@ -160,35 +194,7 @@ def make_prevalence(df: pl.DataFrame):
 
 
 def evaluate_model(cfg: Config, data_module: ABCDDataModule):
-    model = get_model(cfg=cfg)
-    model.to(cfg.device)
-    # cfg.filepaths.data.results.metrics.mkdir(parents=True, exist_ok=True)
-    if cfg.predict or not cfg.filepaths.data.results.predictions.is_file():
-        df = make_predictions(cfg=cfg, model=model, data_module=data_module)
-        df.write_parquet(cfg.filepaths.data.results.predictions)
-    else:
-        df = pl.read_parquet(cfg.filepaths.data.results.predictions)
-    df = df.with_columns(
-        pl.when(pl.col("Quartile at t").eq(4))
-        .then(pl.lit("Persistence"))
-        .otherwise(pl.lit("Conversion"))
-        .alias("High-risk scenario")
-    )
-    variables = [
-        "High-risk scenario",
-        "Sex",
-        "Race",
-        "Age",
-        "Follow-up event",
-        "ADI quartile",
-        "Event year",
-    ]
-    df = df.melt(
-        id_vars=["output", "label", "Quartile at t", "Quartile at t+1"],
-        value_vars=variables,
-        variable_name="Variable",
-        value_name="Group",
-    )
+    df = get_predictions(cfg=cfg, data_module=data_module)
     df_all = df.filter(pl.col("Variable").eq("High-risk scenario")).with_columns(
         pl.lit("Agnostic").alias("Group")
     )
@@ -199,7 +205,7 @@ def evaluate_model(cfg: Config, data_module: ABCDDataModule):
         partial(make_metrics, n_bootstraps=cfg.evaluation.n_bootstraps)
     )
     metrics = metrics.join(prevalence, on=["Variable", "Group", "Quartile at t+1"])
-    metrics.write_csv(cfg.filepaths.data.results.metrics / "metrics.csv")
+    metrics.write_parquet(cfg.filepaths.data.results.eval.metrics)
     pr_curve = grouped_df.map_groups(
         partial(make_curve, curve=precision_recall_curve, name="PR")
     )
@@ -207,8 +213,6 @@ def evaluate_model(cfg: Config, data_module: ABCDDataModule):
     curves = pl.concat([pr_curve, roc_curve], how="diagonal_relaxed").select(
         ["Metric", "Variable", "Group", "Quartile at t+1", "x", "y"]
     )
-    curves.write_csv(cfg.filepaths.data.results.metrics / "curves.csv")
+    curves.write_csv(cfg.filepaths.data.results.eval.curves)
     sens_spec = calc_sensitivity_and_specificity(df=df)
-    sens_spec.write_csv(
-        cfg.filepaths.data.results.metrics / "sensitivity_specificity.csv"
-    )
+    sens_spec.write_csv(cfg.filepaths.data.results.eval.sens_spec)
