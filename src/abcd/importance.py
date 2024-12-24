@@ -54,6 +54,8 @@ def format_shap_values(shap_values, inputs, cfg: Config, columns: list[str]):
     # metadata = pl.read_excel("data/supplement/tables/supplementary_table_1.xlsx")
     df = pl.DataFrame(shap_values, schema=columns)
     inputs = pl.DataFrame(inputs, schema=columns)
+    # these two columns' values got flipped somehow so flip them back
+    inputs = inputs.with_columns(pl.col("adi_percentile", "neighborhood2r_p").mul(-1))
     df = df.unpivot(value_name="shap_value")
     inputs = inputs.unpivot(value_name="feature_value")
     df = df.with_columns(inputs["feature_value"])

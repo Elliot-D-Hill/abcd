@@ -53,7 +53,7 @@ def main():
     if cfg.tables:
         make_tables(cfg=cfg)
     if cfg.plot:
-        plot(cfg=cfg)
+        plot()
 
 
 if __name__ == "__main__":
