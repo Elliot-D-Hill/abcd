@@ -175,29 +175,29 @@ def tuning_table(cfg: Config):
 
 
 def make_tables(cfg: Config):
-    cross_tab = cross_tabulation()
-    aggregate_metrics(
-        analyses=cfg.experiment.analyses, factor_models=cfg.experiment.factor_models
-    )
-    df = pl.scan_parquet("data/results/metrics/metrics.parquet")
-    groups = ["Factor model", "Predictor set", "Metric", "Variable", "Group"]
-    make_metric_table(df=df, groups=groups)
-    metric_table = pl.read_parquet("data/results/metrics/metric_summary.parquet")
-    quartile_metrics = quartile_metric_table(df=metric_table)
-    demographic_metrics = demographic_metric_table(df=metric_table)
-    variable_metadata = pl.read_csv("data/raw/variable_metadata.csv")
-    aces = pl.read_excel("data/raw/ABCD_ACEs.xlsx")
+    # cross_tab = cross_tabulation()
+    # aggregate_metrics(
+    #     analyses=cfg.experiment.analyses, factor_models=cfg.experiment.factor_models
+    # )
+    # df = pl.scan_parquet("data/results/metrics/metrics.parquet")
+    # groups = ["Factor model", "Predictor set", "Metric", "Variable", "Group"]
+    # make_metric_table(df=df, groups=groups)
+    # metric_table = pl.read_parquet("data/results/metrics/metric_summary.parquet")
+    # quartile_metrics = quartile_metric_table(df=metric_table)
+    # demographic_metrics = demographic_metric_table(df=metric_table)
+    # variable_metadata = pl.read_csv("data/raw/variable_metadata.csv")
+    # aces = pl.read_excel("data/raw/ABCD_ACEs.xlsx")
 
-    cross_tab.write_excel("data/tables/table_1.xlsx")
-    quartile_metrics.write_excel("data/tables/table_2.xlsx")
-    demographic_metrics.write_excel("data/tables/table_3.xlsx")
+    # cross_tab.write_excel("data/tables/table_1.xlsx")
+    # quartile_metrics.write_excel("data/tables/table_2.xlsx")
+    # demographic_metrics.write_excel("data/tables/table_3.xlsx")
 
-    variable_metadata.write_excel("data/supplement/tables/supplementary_table_1.xlsx")
-    aces.write_excel("data/supplement/tables/supplementary_table_2.xlsx")
-    metric_table.write_excel("data/supplement/tables/supplementary_table_3.xlsx")
+    # variable_metadata.write_excel("data/supplement/tables/supplementary_table_1.xlsx")
+    # aces.write_excel("data/supplement/tables/supplementary_table_2.xlsx")
+    # metric_table.write_excel("data/supplement/tables/supplementary_table_3.xlsx")
 
     cfg = get_config("config.toml", analysis="questions", factor_model="within_event")
     shap_table = make_shap_table(filepath=cfg.filepaths.data.results.shap_values)
-    tune_table = tuning_table(cfg=cfg)
+    tune_table = tuning_table(cfg=cfg).drop_nulls()
     shap_table.write_excel("data/supplement/tables/supplementary_table_4.xlsx")
     tune_table.write_excel("data/supplement/tables/supplementary_table_5.xlsx")
