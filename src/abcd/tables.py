@@ -1,16 +1,16 @@
+from collections.abc import Iterable
 from itertools import product
 from pathlib import Path
 
 import polars as pl
 import polars.selectors as cs
 
-from abcd.config import Config, get_config
+from abcd.config import Config
 from abcd.constants import GROUP_ORDER, RISK_GROUPS
 
 
 def cross_tabulation():
     df = pl.read_csv("data/raw/metadata.csv")
-
     variables = ["Sex", "Age", "Race", "Follow-up event", "Event year", "ADI quartile"]
     columns = ["Variable", "Group", "No risk", "Low risk", "Moderate risk", "High risk"]
     df = (
@@ -49,10 +49,12 @@ def cross_tabulation():
     return df
 
 
-def aggregate_metrics(analyses: list[str], factor_models: list[str]):
-    for metric_type in ("sensitivity_specificity", "curves", "metrics"):
-        metrics = []
-        for analysis, factor_model in product(analyses, factor_models):
+def aggregate_metrics(
+    cfg: Config, analyses: Iterable[tuple[str, str]], subanalysis: str
+):
+    for name, metric_type in cfg.filepaths.data.results.model_dump().items():
+        metrics: list[pl.LazyFrame] = []
+        for analysis, factor_model in analyses:
             path = f"data/analyses/{factor_model}/{analysis}/results/metrics/{metric_type}.csv"
             metric = (
                 pl.scan_csv(path)
@@ -79,10 +81,10 @@ def aggregate_metrics(analyses: list[str], factor_models: list[str]):
                     cs.numeric().shrink_dtype(), cs.string().cast(pl.Categorical)
                 )
             )
+            # TODO ^ move to after concat
             metrics.append(metric)
-        pl.concat(metrics).collect().write_parquet(
-            f"data/results/metrics/{metric_type}.parquet"
-        )
+        df = pl.concat(metrics).collect()
+        df.write_parquet(f"data/results/{subanalysis}/{metric_type}.parquet")
 
 
 def make_metric_table(df: pl.LazyFrame, groups: list[str]):
@@ -115,7 +117,7 @@ def make_metric_table(df: pl.LazyFrame, groups: list[str]):
     )
 
 
-def quartile_metric_table(df: pl.DataFrame):
+def quartile_metric_table(df: pl.LazyFrame):
     return (
         df.filter(
             pl.col("Variable").eq("High-risk scenario")
@@ -132,7 +134,24 @@ def quartile_metric_table(df: pl.DataFrame):
     )
 
 
-def demographic_metric_table(df: pl.DataFrame):
+def general_metric_table(df: pl.LazyFrame):
+    return (
+        df.filter(
+            pl.col("Variable").eq("High-risk scenario")
+            & pl.col("Predictor set").is_in(["Questionnaires", "CBCL scales"])
+            & pl.col("Factor model").eq("Within-event")
+        )
+        .with_columns(
+            pl.col("Group").cast(pl.Enum(["Conversion", "Persistence", "Agnostic"])),
+            pl.col("Predictor set").cast(pl.Enum(["Questionnaires", "CBCL scales"])),
+        )
+        .drop("Factor model", "Variable")
+        .sort("Predictor set", "Metric", pl.col("Group").cast(GROUP_ORDER))
+        .rename({"Group": "High-risk scenario"})
+    )
+
+
+def demographic_metric_table(df: pl.LazyFrame):
     return (
         df.filter(
             pl.col("Variable").ne("High-risk scenario")
@@ -152,7 +171,7 @@ def make_shap_table(filepath: Path):
         "question",
         "response",
     ]
-    df = pl.read_parquet(filepath)
+    df = pl.scan_parquet(filepath)
     df = (
         df.group_by("variable")
         .agg(
@@ -165,7 +184,7 @@ def make_shap_table(filepath: Path):
 
 
 def tuning_table(cfg: Config):
-    df = pl.read_parquet(cfg.filepaths.data.results.study)
+    df = pl.scan_parquet(cfg.filepaths.data.results.study)
     df = df.rename(lambda x: x.replace("params_", ""))
     df = df.rename({"value": "validation_loss"})
     df = df.drop("number", "datetime_start", "datetime_complete", "duration", "state")
@@ -176,13 +195,18 @@ def tuning_table(cfg: Config):
 
 def make_tables(cfg: Config):
     # cross_tab = cross_tabulation()
-    # aggregate_metrics(
-    #     analyses=cfg.experiment.analyses, factor_models=cfg.experiment.factor_models
-    # )
+    analyses = product(cfg.experiment.analyses, cfg.experiment.factor_models)
+    # aggregate_metrics(cfg=cfg, analyses=analyses, subanalysis="all")
+    generalize = [
+        analysis
+        for analysis in analyses
+        if analysis in {"propensity", "questions", "site"}
+    ]
+    aggregate_metrics(cfg=cfg, analyses=generalize, subanalysis="generalize")
     # df = pl.scan_parquet("data/results/metrics/metrics.parquet")
     # groups = ["Factor model", "Predictor set", "Metric", "Variable", "Group"]
     # make_metric_table(df=df, groups=groups)
-    # metric_table = pl.read_parquet("data/results/metrics/metric_summary.parquet")
+    # metric_table = pl.scan_parquet("data/results/generalize/metric_summary.parquet")
     # quartile_metrics = quartile_metric_table(df=metric_table)
     # demographic_metrics = demographic_metric_table(df=metric_table)
     # variable_metadata = pl.read_csv("data/raw/variable_metadata.csv")
@@ -196,8 +220,8 @@ def make_tables(cfg: Config):
     # aces.write_excel("data/supplement/tables/supplementary_table_2.xlsx")
     # metric_table.write_excel("data/supplement/tables/supplementary_table_3.xlsx")
 
-    cfg = get_config("config.toml", analysis="questions", factor_model="within_event")
-    shap_table = make_shap_table(filepath=cfg.filepaths.data.results.shap_values)
-    tune_table = tuning_table(cfg=cfg).drop_nulls()
-    shap_table.write_excel("data/supplement/tables/supplementary_table_4.xlsx")
-    tune_table.write_excel("data/supplement/tables/supplementary_table_5.xlsx")
+    # cfg = get_config("config.toml", analysis="questions", factor_model="within_event")
+    # shap_table = make_shap_table(filepath=cfg.filepaths.data.results.shap_values)
+    # tune_table = tuning_table(cfg=cfg).drop_nulls()
+    # shap_table.write_excel("data/supplement/tables/supplementary_table_4.xlsx")
+    # tune_table.write_excel("data/supplement/tables/supplementary_table_5.xlsx")

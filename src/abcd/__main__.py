@@ -10,15 +10,13 @@ from abcd.config import Experiment, get_config
 from abcd.dataset import ABCDDataModule
 from abcd.evaluate import evaluate_model
 from abcd.importance import estimate_importance
-from abcd.metadata import make_metadata
 from abcd.plots import plot
 from abcd.process import get_dataset
 from abcd.tables import make_tables
 from abcd.tune import tune_model
 
 
-def make_experiment(cfg: Experiment):
-    analyses = product(cfg.analyses, cfg.factor_models)
+def make_tqdm(analyses, cfg: Experiment):
     return tqdm(analyses, total=len(cfg.analyses) * len(cfg.factor_models))
 
 
@@ -31,8 +29,9 @@ def main():
     seed_everything(cfg.random_seed)
     torch.set_float32_matmul_precision("medium")
     pl.set_random_seed(cfg.random_seed)
-    make_metadata(cfg=cfg)
-    experiment = make_experiment(cfg=cfg.experiment)
+    # make_metadata(cfg=cfg)
+    analyses = product(cfg.experiment.analyses, cfg.experiment.factor_models)
+    experiment = make_tqdm(analyses, cfg=cfg.experiment)
     print(experiment)
     for analysis, factor_model in experiment:
         if not any([cfg.regenerate, cfg.evaluate, cfg.tune, cfg.importance]):
