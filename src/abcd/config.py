@@ -109,6 +109,7 @@ class Splits(BaseModel):
     train: Path
     val: Path
     test: Path
+    metadata: Path
 
 
 class Raw(BaseModel):

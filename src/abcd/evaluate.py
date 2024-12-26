@@ -2,6 +2,7 @@ from functools import partial
 from typing import Callable
 
 import polars as pl
+import polars.selectors as cs
 import torch
 from torchmetrics.classification import (
     MulticlassAUROC,
@@ -13,20 +14,38 @@ from torchmetrics.functional import precision_recall_curve, roc
 from torchmetrics.wrappers import BootStrapper
 
 from abcd.config import Config
+from abcd.constants import COLUMNS, EVENTS_TO_NAMES
 from abcd.dataset import ABCDDataModule
 from abcd.model import Network, make_trainer
 from abcd.tune import get_model
 
 
-def make_predictions(cfg: Config, model: Network, data_module: ABCDDataModule):
+def make_predictions(
+    cfg: Config, model: Network, data_module: ABCDDataModule
+) -> tuple[torch.Tensor, torch.Tensor]:
     trainer = make_trainer(cfg=cfg, checkpoint=False)
     predictions = trainer.predict(model, dataloaders=data_module.test_dataloader())
     outputs, labels = zip(*predictions)
     outputs = torch.concat(outputs).cpu()
     labels = torch.concat(labels).cpu()
-    metadata = pl.read_csv(cfg.filepaths.data.raw.metadata)
-    test_metadata = metadata.filter(pl.col("Split").eq("test"))
-    df = pl.DataFrame({"output": outputs.cpu().numpy(), "label": labels.cpu().numpy()})
+    return outputs, labels
+
+
+def format_metadata(lf: pl.LazyFrame, cfg: Config) -> pl.LazyFrame:
+    lf = (
+        lf.with_columns(
+            pl.col(cfg.index.event).replace_strict(EVENTS_TO_NAMES, default=None)
+        )
+        .rename(COLUMNS)
+        .with_columns(cs.numeric().cast(pl.Int32))
+    )
+    return lf.filter(pl.col("Split").eq("test"))
+
+
+def format_predictions(cfg: Config, outputs, labels) -> pl.DataFrame:
+    metadata = pl.scan_parquet(cfg.filepaths.data.analytic.metadata)
+    test_metadata = format_metadata(lf=metadata, cfg=cfg)
+    df = pl.LazyFrame({"output": outputs.cpu().numpy(), "label": labels.cpu().numpy()})
     df = pl.concat([test_metadata, df], how="horizontal")
     df = df.with_columns(
         pl.when(pl.col("Quartile at t").eq(4))
@@ -49,28 +68,30 @@ def make_predictions(cfg: Config, model: Network, data_module: ABCDDataModule):
         variable_name="Variable",
         value_name="Group",
     )
-    return df
+    return df.collect()
 
 
 def get_predictions(cfg: Config, data_module: ABCDDataModule) -> pl.DataFrame:
     model = get_model(cfg=cfg)
     model.to(cfg.device)
-    # FIXME cfg.filepaths.data.results.eval.mkdir(parents=True, exist_ok=True)
     if cfg.predict or not cfg.filepaths.data.results.predictions.is_file():
-        df = make_predictions(cfg=cfg, model=model, data_module=data_module)
+        outputs, labels = make_predictions(
+            cfg=cfg, model=model, data_module=data_module
+        )
+        df = format_predictions(cfg=cfg, outputs=outputs, labels=labels)
         df.write_parquet(cfg.filepaths.data.results.predictions)
     else:
         df = pl.read_parquet(cfg.filepaths.data.results.predictions)
     return df
 
 
-def get_outputs_labels(df: pl.DataFrame):
+def get_outputs_labels(df: pl.DataFrame) -> tuple[torch.Tensor, torch.Tensor]:
     outputs = torch.tensor(df["output"].to_list(), dtype=torch.float)
     labels = torch.tensor(df["label"].to_numpy(), dtype=torch.long)
     return outputs, labels
 
 
-def make_curve_df(df, name, quartile, x, y):
+def make_curve_df(df, name, quartile, x, y) -> pl.DataFrame:
     return pl.DataFrame(
         {
             "Metric": name,
@@ -83,7 +104,7 @@ def make_curve_df(df, name, quartile, x, y):
     )
 
 
-def make_curve(df: pl.DataFrame, curve: Callable, name: str):
+def make_curve(df: pl.DataFrame, curve: Callable, name: str) -> pl.DataFrame:
     outputs, labels = get_outputs_labels(df)
     task = "multiclass"
     num_classes = outputs.shape[-1]
@@ -91,7 +112,7 @@ def make_curve(df: pl.DataFrame, curve: Callable, name: str):
         x, y, _ = curve(outputs, labels, task=task, num_classes=num_classes)
     if name == "PR":
         y, x, _ = curve(outputs, labels, task=task, num_classes=num_classes)
-    dfs = []
+    dfs: list[pl.DataFrame] = []
     for quartile, (x_i, y_i) in enumerate(zip(x, y), start=1):
         quartile = 4 if outputs.dim() == 1 else quartile
         curve_df = make_curve_df(
@@ -102,18 +123,18 @@ def make_curve(df: pl.DataFrame, curve: Callable, name: str):
     return df
 
 
-def bootstrap_metric(metric, outputs, labels, n_bootstraps: int):
+def bootstrap_metric(metric, outputs, labels, n_bootstraps: int) -> pl.LazyFrame:
     bootstrap = BootStrapper(
         metric, num_bootstraps=n_bootstraps, mean=False, std=False, raw=True
     )
     bootstrap.update(outputs, labels)
     bootstraps = bootstrap.compute()["raw"].cpu().numpy()
     columns = [str(i) for i in range(1, outputs.shape[-1] + 1)]
-    return pl.DataFrame(bootstraps, schema=columns)
+    return pl.LazyFrame(bootstraps, schema=columns)
 
 
-def make_metrics(df: pl.DataFrame, n_bootstraps: int):
-    if df.shape[0] < 10:
+def make_metrics(df: pl.DataFrame, n_bootstraps: int) -> pl.DataFrame:
+    if df.height < 10:
         return pl.DataFrame(
             {
                 "Metric": [],
@@ -132,14 +153,16 @@ def make_metrics(df: pl.DataFrame, n_bootstraps: int):
     bootstrapped_ap = bootstrap_metric(
         ap, outputs, labels, n_bootstraps=n_bootstraps
     ).with_columns(pl.lit("AP").alias("Metric"))
+    lf = pl.concat(
+        [bootstrapped_auroc, bootstrapped_ap],
+        how="diagonal_relaxed",
+    )
+    group = lf.select("Group").first().collect().item()
+    variable = lf.select("Variable").first().collect().item()
     df = (
-        pl.concat(
-            [bootstrapped_auroc, bootstrapped_ap],
-            how="diagonal_relaxed",
-        )
-        .with_columns(
-            pl.lit(df["Group"][0]).cast(pl.String).alias("Group"),
-            pl.lit(df["Variable"][0]).cast(pl.String).alias("Variable"),
+        df.with_columns(
+            pl.lit(group).cast(pl.String).alias("Group"),
+            pl.lit(variable).cast(pl.String).alias("Variable"),
         )
         .melt(id_vars=["Metric", "Variable", "Group"], variable_name="Quartile at t+1")
         .with_columns(pl.col("Quartile at t+1").cast(pl.Int64))

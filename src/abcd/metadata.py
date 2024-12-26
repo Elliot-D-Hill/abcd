@@ -45,7 +45,8 @@ def make_metadata(cfg: Config) -> None:
     if not cfg.regenerate:
         return
     dfs = get_datasets(cfg=cfg)
-    make_variable_metadata(cfg=cfg, dfs=dfs)
+    columns = [df.collect_schema().names() for df in dfs]
+    make_variable_metadata(cfg=cfg, columns=columns)
     df = join_dataframes(frames=dfs, on=cfg.index.join_on, how="left")
     df = make_subject_metadata(cfg=cfg, df=df)
     labels = make_labels(cfg=cfg)
@@ -53,10 +54,14 @@ def make_metadata(cfg: Config) -> None:
     df = df.with_columns(
         pl.col(cfg.index.event).replace_strict(EVENTS_TO_VALUES, default=None)
     )
-    df.collect().write_parquet(cfg.filepaths.data.processed.metadata)
-    df = df.with_columns(
-        pl.col(cfg.index.event).replace_strict(EVENTS_TO_NAMES, default=None)
-    ).rename(COLUMNS)
+    df.collect().write_parquet(cfg.filepaths.data.analytic.metadata)
+    df = (
+        df.with_columns(
+            pl.col(cfg.index.event).replace_strict(EVENTS_TO_NAMES, default=None)
+        )
+        .rename(COLUMNS)
+        .with_columns(cs.numeric().cast(pl.Int32))
+    )
     df.collect().write_parquet(cfg.filepaths.data.processed.subject_metadata)
 
 
@@ -177,8 +182,7 @@ def clean_variables(df: pl.DataFrame):
     return df
 
 
-def make_variable_metadata(cfg: Config, dfs: list[pl.LazyFrame]) -> None:
-    columns = [df.collect_schema().names() for df in dfs]
+def make_variable_metadata(cfg: Config, columns: list[list[str]]) -> None:
     variables = make_variable_df(cfg=cfg, columns=columns)
     df = pl.read_csv(
         "data/raw/abcd_data_dictionary.csv",
