@@ -6,10 +6,11 @@ import polars as pl
 import polars.selectors as cs
 import seaborn as sns
 
-from abcd.config import Config
+from abcd.config import get_config
 from abcd.constants import RISK_MAPPING
 
 FORMAT = "pdf"
+DPI = 300
 
 
 def quartile_curves():
@@ -71,7 +72,7 @@ def quartile_curves():
 def abs_shap_sum(filepath: Path):
     df = pl.read_parquet(filepath)
     order = (
-        df.group_by("dataset")
+        df.group_by("respondent", "dataset")
         .agg(pl.col("shap_value").sum().abs())
         .sort("shap_value", descending=True)["dataset"]
         .to_list()
@@ -84,6 +85,7 @@ def abs_shap_sum(filepath: Path):
         )
         dfs.append(resampled)
     df = pl.concat(dfs)
+    plt.figure(figsize=(10, 6))
     g = sns.pointplot(
         data=df,
         x="shap_value",
@@ -92,6 +94,7 @@ def abs_shap_sum(filepath: Path):
         linestyles="none",
         order=order,
         errorbar="pi",
+        hue_order=["Parent", "Youth"],
     )
     g.set(ylabel="Predictor category", xlabel="Absolute SHAP value sum")
     plt.legend(title="Respondent")
@@ -153,17 +156,21 @@ def shap_plot(
     cbcl_names = {
         k + " cbcl syndrome scale (t-score)": v for k, v in cbcl_names.items()
     }
-    df = pl.read_parquet(shap_path).with_columns(
-        (pl.col("Respondent") + ": " + pl.col("dataset")).alias("Dataset"),
-        pl.col("question").replace(cbcl_names),
+    df = pl.read_csv(
+        "data/analyses/within_event/symptoms/results/shap_values.csv"
+    ).rename({"Respondent": "respondent"})
+    # df = pl.read_parquet(shap_path)
+    df = df.with_columns(pl.col("question").replace(cbcl_names))
+    df = df.with_columns(
+        (pl.col("respondent") + ": " + pl.col("dataset")).alias("dataset"),
     )
     n_bootstraps = 100
     dfs = []
     for _ in range(n_bootstraps):
         resampled = (
             df.sample(fraction=1.0, with_replacement=True)
-            .group_by("Respondent", "question")
-            .agg(pl.col("Dataset").first(), pl.col("shap_value").sum())
+            .group_by("respondent", "question")
+            .agg(pl.col("dataset").first(), pl.col("shap_value").sum().abs())
         )
         dfs.append(resampled)
     df = pl.concat(dfs)
@@ -179,16 +186,13 @@ def shap_plot(
         data=df.to_pandas(),
         x="shap_value",
         y="question",
-        hue="Dataset",
+        hue="dataset",
         errorbar="ci",
         linestyles="none",
         order=order,
     )
-    # sns.move_legend(g, "upper left", bbox_to_anchor=(1, 1))
-    g.set(
-        xlabel="SHAP value",
-        ylabel=y_axis_label,
-    )
+    g.legend(title="Dataset")
+    g.set(xlabel="Absolute SHAP value sum", ylabel=y_axis_label)
     g.set_yticks(g.get_yticks())
     labels = [
         textwrap.fill(label.get_text(), textwrap_width) for label in g.get_yticklabels()
@@ -197,7 +201,7 @@ def shap_plot(
     g.yaxis.grid(True)
     plt.axvline(x=0, color="black", linestyle="--")
     plt.tight_layout()
-    plt.savefig(f"{filepath}.{FORMAT}", format=FORMAT)
+    plt.savefig(f"{filepath}.{FORMAT}", format=FORMAT, dpi=DPI)
 
 
 def p_factor_model_comparison():
@@ -235,44 +239,16 @@ def p_factor_model_comparison():
         f"data/supplement/figures/supplementary_figure_4.{FORMAT}",
         format=FORMAT,
         bbox_inches="tight",
-    )
-
-
-def group_shap_coef(filepath: Path):
-    sns.set_theme(style="darkgrid", font_scale=1.4)
-    df = pl.read_parquet(filepath)
-    order = (
-        df.group_by("dataset")
-        .agg(pl.col("coefficient").mean().abs())
-        .sort("coefficient", descending=True)["dataset"]
-        .to_list()
-    )
-    g = sns.pointplot(
-        data=df,
-        x="coefficient",
-        y="dataset",
-        hue="respondent",
-        order=order,
-        linestyles="none",
-        errorbar="pi",
-    )
-    plt.legend(title="Respondent")
-    g.yaxis.grid(True)
-    plt.axvline(x=0, color="black", linestyle="--")
-    g.set_xlabel("SHAP coefficient")
-    g.set_ylabel("Predictor category")
-    plt.savefig(
-        f"data/supplement/figures/supplementary_figure_5.{FORMAT}",
-        format=FORMAT,
-        bbox_inches="tight",
+        dpi=DPI,
     )
 
 
 def shap_scatter(filepath: Path):
-    sns.set_theme(style="darkgrid", font_scale=1.4)
+    sns.set_theme(context="paper", style="darkgrid", palette="deep", font_scale=2.5)
+    plt.figure(figsize=(6, 8))
     df = pl.read_parquet(filepath)
     # remove one outlier from Family mental health history
-    df = df.filter(pl.col("feature_value") < 30)
+    df = df.filter(pl.col("feature_value") < 20)
     df = df.filter(pl.col("dataset") != "Follow-up event")
     order = (
         df.group_by("dataset")
@@ -280,17 +256,32 @@ def shap_scatter(filepath: Path):
         .sort("shap_value", descending=True)["dataset"]
         .to_list()
     )
-    g = sns.relplot(
-        data=df,
+    g = sns.lmplot(
+        data=df,  # type: ignore
         x="feature_value",
         y="shap_value",
         hue="respondent",
         col="dataset",
         col_wrap=4,
         col_order=order,
-        kind="scatter",
-        alpha=0.5,
+        order=2,
+        ci=95,
         facet_kws={"sharey": False, "sharex": False},
+        scatter_kws={"alpha": 0.15, "rasterized": True},
+        hue_order=["Parent", "Youth"],
+    )
+    ax = g.axes[1]
+    handles, labels = ax.get_legend_handles_labels()
+    g.legend.remove()  # type: ignore
+    for handle in handles:
+        handle.set_alpha(0.9)
+    legend_data = dict(zip(labels, handles))
+    g.add_legend(
+        legend_data=legend_data,
+        title="Respondent",
+        markerscale=3,
+        bbox_to_anchor=(0.9, 0.5),
+        loc="center left",
     )
     g.set_titles("")
     g.set_axis_labels("Predictor value", "SHAP Value")
@@ -300,30 +291,34 @@ def shap_scatter(filepath: Path):
         f"data/supplement/figures/supplementary_figure_6.{FORMAT}",
         format=FORMAT,
         bbox_inches="tight",
+        dpi=DPI,
     )
 
 
-def plot(cfg: Config):
+def plot():
     sns.set_theme(context="paper", style="darkgrid", palette="deep", font_scale=1.5)
-
+    cfg = get_config(
+        path="config.toml", factor_model="within_event", analysis="questions"
+    )
     # quartile_curves()
     # analysis_comparison()
-
     abs_shap_sum(filepath=cfg.filepaths.data.results.shap_values)
-    group_shap_coef(filepath=cfg.filepaths.data.results.group_shap_coef)
     shap_scatter(filepath=cfg.filepaths.data.results.shap_values)
-    shap_plot(
-        filepath="data/supplement/figures/supplementary_figure_2",
-        shap_path=cfg.filepaths.data.results.shap_values,
-        textwrap_width=75,
-        y_axis_label="CBCL syndrome scale (t-score)",
-        figsize=(16, 8),
-    )
     shap_plot(
         filepath="data/supplement/figures/supplementary_figure_3",
         shap_path=cfg.filepaths.data.results.shap_values,
         textwrap_width=75,
         y_axis_label="Question",
-        figsize=(24, 16),
+        figsize=(14, 8),
     )
+    # cfg = get_config(
+    #     path="config.toml", factor_model="within_event", analysis="symptoms"
+    # )
+    # shap_plot(
+    #     filepath="data/supplement/figures/supplementary_figure_2",
+    #     shap_path=cfg.filepaths.data.results.shap_values,
+    #     textwrap_width=75,
+    #     y_axis_label="CBCL syndrome scale",
+    #     figsize=(9, 5),
+    # )
     # p_factor_model_comparison()
