@@ -5,7 +5,9 @@ import torch
 from lightning import seed_everything
 from sklearn import set_config
 from tqdm import tqdm
+from transformers import logging
 
+from abcd.bert import run
 from abcd.config import Experiment, get_config
 from abcd.dataset import ABCDDataModule
 from abcd.evaluate import evaluate_model
@@ -31,6 +33,7 @@ def main():
     seed_everything(cfg.random_seed)
     torch.set_float32_matmul_precision("medium")
     pl.set_random_seed(cfg.random_seed)
+    logging.set_verbosity_error()
     make_metadata(cfg=cfg)
     experiment = make_experiment(cfg=cfg.experiment)
     print(experiment)
@@ -42,8 +45,9 @@ def main():
         )
         splits = get_dataset(cfg=cfg)
         data_module = ABCDDataModule(splits=splits, cfg=cfg)
-        if cfg.experiment.analysis != "llm":
-            cfg.model.input_dim = data_module.train[0][0].shape[-1]
+        instance = data_module.train[0][0]
+        if isinstance(instance, torch.Tensor):
+            cfg.model.input_dim = instance.shape[-1]
         print("Input dimension:", cfg.model.input_dim)
         if cfg.tune:
             tune_model(cfg=cfg, data_module=data_module)
@@ -61,4 +65,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run()
+    # main()

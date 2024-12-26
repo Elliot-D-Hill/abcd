@@ -7,7 +7,7 @@ import torch
 from lightning import LightningDataModule
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
-from transformers import BigBirdTokenizer
+from transformers import AutoTokenizer
 
 from abcd.config import Config
 
@@ -56,13 +56,6 @@ class FileDataset(Dataset):
         labels = torch.tensor(data["label"], dtype=torch.float32)
         dummy_propensity = torch.tensor([1.0] * labels.size(0))
         return features, labels, dummy_propensity
-
-
-# df = df.select(
-#     pl.col("sentence")
-#     .list.sample(fraction=1, shuffle=True)
-#     .list.join(separator="</s> <s>")
-# )
 
 
 def add_bos_eos(sentences: list[str]) -> str:
@@ -131,11 +124,11 @@ def init_datasets(splits: dict, cfg: Config):
 
 def get_tokenizer(cfg: Config):
     if (cfg.filepaths.data.models.model / "tokenizer_config.json").exists():
-        tokenizer = BigBirdTokenizer.from_pretrained(
+        tokenizer = AutoTokenizer.from_pretrained(
             cfg.filepaths.data.models.model, clean_up_tokenization_spaces=True
         )
     else:
-        tokenizer = BigBirdTokenizer.from_pretrained(
+        tokenizer = AutoTokenizer.from_pretrained(
             cfg.model.llm_name, clean_up_tokenization_spaces=True
         )
         tokenizer.save_pretrained(cfg.filepaths.data.models.model)

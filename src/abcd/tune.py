@@ -53,20 +53,6 @@ class Objective:
             trainer.save_checkpoint(
                 cfg.filepaths.data.results.checkpoints / "best.ckpt"
             )
-        predictions = trainer.predict(
-            model, dataloaders=self.data_module.val_dataloader()
-        )
-        if predictions is None:
-            return float("inf")
-        outputs = torch.cat([x[0] for x in predictions])
-        labels = torch.cat([x[1] for x in predictions])
-        auroc_score = multiclass_auroc(
-            preds=outputs,
-            target=labels.long(),
-            num_classes=outputs.shape[-1],
-            average="none",
-        )
-        print("AUC:", auroc_score)
         return val_loss
 
 

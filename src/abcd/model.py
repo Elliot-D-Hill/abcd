@@ -8,7 +8,7 @@ from torch import nn
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from torch.optim.sgd import SGD
 from torchvision.ops import MLP
-from transformers import BigBirdForSequenceClassification
+from transformers import AutoModelForSequenceClassification
 
 from abcd.config import Config
 
@@ -129,7 +129,6 @@ class LLM(nn.Module):
     def __init__(self, model, output_dim: int):
         super().__init__()
         self.model = model
-        self.classifier = nn.Linear(self.model.config.hidden_size, output_dim)
 
     def forward(self, inputs):
         return self.model(**inputs).logits
@@ -180,7 +179,6 @@ class Network(LightningModule):
         return loss
 
     def training_step(self, batch, batch_idx):
-        print(batch_idx)
         return self.step("train", batch)
 
     def validation_step(self, batch, batch_idx):
@@ -232,8 +230,8 @@ def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
         log_every_n_steps=cfg.logging.log_every_n_steps,
         fast_dev_run=cfg.fast_dev_run,
         check_val_every_n_epoch=1,
-        val_check_interval=0.1,
         enable_checkpointing=checkpoint,
+        precision="16-mixed",  # TODO move to config
         **cfg.trainer.dict(),
     )
     return trainer
@@ -241,11 +239,11 @@ def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
 
 def get_llm(cfg: Config):
     if (cfg.filepaths.data.models.model / "config.json").exists():
-        model = BigBirdForSequenceClassification.from_pretrained(
+        model = AutoModelForSequenceClassification.from_pretrained(
             cfg.filepaths.data.models.model, num_labels=cfg.model.output_dim
         )
     else:
-        model = BigBirdForSequenceClassification.from_pretrained(
+        model = AutoModelForSequenceClassification.from_pretrained(
             cfg.model.llm_name, num_labels=cfg.model.output_dim
         )
         model.save_pretrained(cfg.filepaths.data.models.model)
