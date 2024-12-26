@@ -10,6 +10,7 @@ from abcd.config import Experiment, get_config
 from abcd.dataset import ABCDDataModule
 from abcd.evaluate import evaluate_model
 from abcd.importance import estimate_importance
+from abcd.metadata import make_metadata
 from abcd.plots import plot
 from abcd.process import get_dataset
 from abcd.tables import make_tables
@@ -39,6 +40,8 @@ def main():
         cfg = get_config(
             path="config.toml", factor_model=factor_model, analysis=analysis
         )
+        if cfg.regenerate:
+            make_metadata(cfg=cfg)
         splits = get_dataset(cfg=cfg)
         data_module = ABCDDataModule(splits=splits, cfg=cfg)
         cfg.model.input_dim = data_module.train[0][0].shape[-1]

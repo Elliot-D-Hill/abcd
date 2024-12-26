@@ -10,7 +10,6 @@ from nanook.transform import impute, standardize
 
 from abcd.config import Config
 from abcd.constants import EVENTS, EVENTS_TO_VALUES
-from abcd.metadata import make_metadata
 
 
 def make_demographics(df: pl.LazyFrame) -> pl.LazyFrame:
@@ -207,7 +206,6 @@ def make_dataset(cfg: Config) -> None:
 
 def get_dataset(cfg: Config) -> dict[str, pl.DataFrame | list[str]]:
     if cfg.regenerate:
-        make_metadata(cfg=cfg)
         make_dataset(cfg=cfg)
     if cfg.experiment.analysis in {"mri_all", "questions_mri_all"}:
         train = glob(str(cfg.filepaths.data.analytic.path / "train/*.npz"))
