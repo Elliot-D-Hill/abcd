@@ -1,11 +1,10 @@
 from collections.abc import Iterable
-from itertools import product
 from pathlib import Path
 
 import polars as pl
 import polars.selectors as cs
 
-from abcd.config import Config
+from abcd.config import Config, get_config
 from abcd.constants import GROUP_ORDER, RISK_GROUPS
 
 
@@ -49,42 +48,43 @@ def cross_tabulation():
     return df
 
 
-def aggregate_metrics(
-    cfg: Config, analyses: Iterable[tuple[str, str]], subanalysis: str
-):
-    for name, metric_type in cfg.filepaths.data.results.model_dump().items():
-        metrics: list[pl.LazyFrame] = []
-        for analysis, factor_model in analyses:
-            path = f"data/analyses/{factor_model}/{analysis}/results/metrics/{metric_type}.csv"
-            metric = (
-                pl.scan_csv(path)
-                .with_columns(
-                    pl.lit(factor_model).alias("Factor model"),
-                    pl.lit(analysis).alias("Predictor set"),
-                )
-                .with_columns(
-                    pl.col("Predictor set").replace(
-                        {
-                            "questions": "Questionnaires",
-                            "symptoms": "CBCL scales",
-                            "questions_symptoms": "Questionnaires, CBCL scales",
-                            "questions_mri": "Questionnaires, MRI",
-                            "questions_mri_symptoms": "Questionnaires, MRI, CBCL scales",
-                            "autoregressive": "Previous p-factors",
-                        }
-                    ),
-                    pl.col("Factor model").replace(
-                        {"within_event": "Within-event", "across_event": "Across-event"}
-                    ),
-                )
-                .with_columns(
-                    cs.numeric().shrink_dtype(), cs.string().cast(pl.Categorical)
-                )
-            )
-            # TODO ^ move to after concat
+def aggregate_metrics(analyses: Iterable[tuple[str, str]], subanalysis: str):
+    for analysis, factor_model in analyses:
+        cfg = get_config(
+            path="config.toml", factor_model="within_event", analysis="metadata"
+        )
+        lf = pl.scan_parquet(cfg.filepaths.analyses)
+        for name, path in cfg.filepaths.data.results.eval.model_dump().items():
+            metrics: list[pl.LazyFrame] = []
+            metric = pl.scan_parquet(path)
             metrics.append(metric)
-        df = pl.concat(metrics).collect()
-        df.write_parquet(f"data/results/{subanalysis}/{metric_type}.parquet")
+        df = (
+            pl.concat(metrics)
+            .with_columns(
+                pl.lit(factor_model).alias("Factor model"),
+                pl.lit(analysis).alias("Predictor set"),
+            )
+            .with_columns(
+                pl.col("Predictor set").replace(
+                    {
+                        "questions": "Questionnaires",
+                        "symptoms": "CBCL scales",
+                        "questions_symptoms": "Questionnaires, CBCL scales",
+                        "questions_mri": "Questionnaires, MRI",
+                        "questions_mri_symptoms": "Questionnaires, MRI, CBCL scales",
+                        "autoregressive": "Previous p-factors",
+                        "site": "Site splits",
+                        "propensity": "Propensity scores",
+                    }
+                ),
+                pl.col("Factor model").replace(
+                    {"within_event": "Within-event", "across_event": "Across-event"}
+                ),
+            )
+            .with_columns(cs.numeric().shrink_dtype(), cs.string().cast(pl.Categorical))
+        )
+        df = df.collect()
+        df.write_parquet(f"data/results/{subanalysis}/{name}.parquet")
 
 
 def make_metric_table(df: pl.LazyFrame, groups: list[str]):
@@ -134,21 +134,24 @@ def quartile_metric_table(df: pl.LazyFrame):
     )
 
 
-def general_metric_table(df: pl.LazyFrame):
-    return (
+def general_metric_table():
+    df = pl.scan_parquet("data/results/generalize/metrics.parquet")
+    predictor_sets = ["Questionnaires", "Site splits", "Propensity scores"]
+    df = (
         df.filter(
             pl.col("Variable").eq("High-risk scenario")
-            & pl.col("Predictor set").is_in(["Questionnaires", "CBCL scales"])
+            & pl.col("Predictor set").is_in(predictor_sets)
             & pl.col("Factor model").eq("Within-event")
         )
         .with_columns(
             pl.col("Group").cast(pl.Enum(["Conversion", "Persistence", "Agnostic"])),
-            pl.col("Predictor set").cast(pl.Enum(["Questionnaires", "CBCL scales"])),
+            pl.col("Predictor set").cast(pl.Enum(predictor_sets)),
         )
         .drop("Factor model", "Variable")
         .sort("Predictor set", "Metric", pl.col("Group").cast(GROUP_ORDER))
         .rename({"Group": "High-risk scenario"})
     )
+    return df
 
 
 def demographic_metric_table(df: pl.LazyFrame):
@@ -195,14 +198,17 @@ def tuning_table(cfg: Config):
 
 def make_tables(cfg: Config):
     # cross_tab = cross_tabulation()
-    analyses = product(cfg.experiment.analyses, cfg.experiment.factor_models)
+    # analyses = product(cfg.experiment.analyses, cfg.experiment.factor_models)
     # aggregate_metrics(cfg=cfg, analyses=analyses, subanalysis="all")
     generalize = [
-        analysis
-        for analysis in analyses
-        if analysis in {"propensity", "questions", "site"}
+        ("propensity", "within_event"),
+        ("site", "within_event"),
+        ("questions", "within_event"),
     ]
     aggregate_metrics(cfg=cfg, analyses=generalize, subanalysis="generalize")
+
+    df = general_metric_table()
+    df.sink_parquet("supplement/tables/supplementary_table_5.parquet")
     # df = pl.scan_parquet("data/results/metrics/metrics.parquet")
     # groups = ["Factor model", "Predictor set", "Metric", "Variable", "Group"]
     # make_metric_table(df=df, groups=groups)

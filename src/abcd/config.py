@@ -10,7 +10,6 @@ class Experiment(BaseModel):
     analysis: str
     factor_models: list[str]
     factor_model: str
-    split_on: str
 
 
 class Index(BaseModel):

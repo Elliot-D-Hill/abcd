@@ -16,13 +16,15 @@ from torchmetrics.wrappers import BootStrapper
 from abcd.config import Config
 from abcd.constants import COLUMNS, EVENTS_TO_NAMES
 from abcd.dataset import ABCDDataModule
-from abcd.model import Network, make_trainer
+from abcd.model import make_trainer
 from abcd.tune import get_model
 
 
 def make_predictions(
-    cfg: Config, model: Network, data_module: ABCDDataModule
+    cfg: Config, data_module: ABCDDataModule
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    model = get_model(cfg=cfg)
+    model.to(cfg.device)
     trainer = make_trainer(cfg=cfg, checkpoint=False)
     predictions = trainer.predict(model, dataloaders=data_module.test_dataloader())
     outputs, labels = zip(*predictions)
@@ -72,12 +74,8 @@ def format_predictions(cfg: Config, outputs, labels) -> pl.DataFrame:
 
 
 def get_predictions(cfg: Config, data_module: ABCDDataModule) -> pl.DataFrame:
-    model = get_model(cfg=cfg)
-    model.to(cfg.device)
     if cfg.predict or not cfg.filepaths.data.results.predictions.is_file():
-        outputs, labels = make_predictions(
-            cfg=cfg, model=model, data_module=data_module
-        )
+        outputs, labels = make_predictions(cfg=cfg, data_module=data_module)
         df = format_predictions(cfg=cfg, outputs=outputs, labels=labels)
         df.write_parquet(cfg.filepaths.data.results.predictions)
     else:
@@ -87,7 +85,7 @@ def get_predictions(cfg: Config, data_module: ABCDDataModule) -> pl.DataFrame:
 
 def get_outputs_labels(df: pl.DataFrame) -> tuple[torch.Tensor, torch.Tensor]:
     outputs = torch.tensor(df["output"].to_list(), dtype=torch.float)
-    labels = torch.tensor(df["label"].to_numpy(), dtype=torch.long)
+    labels = torch.tensor(df["label"].to_numpy(), dtype=torch.int)
     return outputs, labels
 
 
@@ -157,17 +155,17 @@ def make_metrics(df: pl.DataFrame, n_bootstraps: int) -> pl.DataFrame:
         [bootstrapped_auroc, bootstrapped_ap],
         how="diagonal_relaxed",
     )
-    group = lf.select("Group").first().collect().item()
-    variable = lf.select("Variable").first().collect().item()
-    df = (
-        df.with_columns(
+    group = df["Group"].first()
+    variable = df["Variable"].first()
+    lf = (
+        lf.with_columns(
             pl.lit(group).cast(pl.String).alias("Group"),
             pl.lit(variable).cast(pl.String).alias("Variable"),
         )
         .melt(id_vars=["Metric", "Variable", "Group"], variable_name="Quartile at t+1")
-        .with_columns(pl.col("Quartile at t+1").cast(pl.Int64))
+        .with_columns(pl.col("Quartile at t+1").cast(pl.Int32))
     )
-    return df
+    return lf.collect()
 
 
 def calc_sensitivity_and_specificity(df: pl.DataFrame):

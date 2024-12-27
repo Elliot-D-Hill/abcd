@@ -30,10 +30,8 @@ def main():
     seed_everything(cfg.random_seed)
     torch.set_float32_matmul_precision("medium")
     pl.set_random_seed(cfg.random_seed)
-    # make_metadata(cfg=cfg)
     analyses = product(cfg.experiment.analyses, cfg.experiment.factor_models)
     experiment = make_tqdm(analyses, cfg=cfg.experiment)
-    print(experiment)
     for analysis, factor_model in experiment:
         if not any([cfg.regenerate, cfg.evaluate, cfg.tune, cfg.importance]):
             continue
