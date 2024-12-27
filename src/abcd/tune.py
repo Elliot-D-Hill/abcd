@@ -23,11 +23,22 @@ def make_params(trial: optuna.Trial, cfg: Config):
     return cfg
 
 
-def get_model(cfg: Config, best: bool = False):
+def get_model(cfg: Config, best: bool):
     if best:
         filepath = cfg.filepaths.data.results.best_model
         return Network.load_from_checkpoint(checkpoint_path=filepath)
     return Network(cfg=cfg)
+
+
+def auc(predictions):
+    outputs = torch.cat([x[0] for x in predictions])
+    labels = torch.cat([x[1] for x in predictions])
+    return multiclass_auroc(
+        preds=outputs,
+        target=labels.long(),
+        num_classes=outputs.shape[-1],
+        average="none",
+    )
 
 
 class Objective:
@@ -38,7 +49,7 @@ class Objective:
 
     def __call__(self, trial: optuna.Trial):
         cfg = make_params(trial, cfg=self.cfg)
-        model = get_model(cfg=cfg)
+        model = get_model(cfg=cfg, best=False)
         trainer = make_trainer(cfg=cfg, checkpoint=False)
         trainer.fit(model, datamodule=self.data_module)
         val_loss = trainer.callback_metrics["val_loss"].item()
@@ -52,14 +63,7 @@ class Objective:
         )
         if predictions is None:
             return float("inf")
-        outputs = torch.cat([x[0] for x in predictions])
-        labels = torch.cat([x[1] for x in predictions])
-        auroc_score = multiclass_auroc(
-            preds=outputs,
-            target=labels.long(),
-            num_classes=outputs.shape[-1],
-            average="none",
-        )
+        auroc_score = auc(predictions)
         print("AUC:", auroc_score)
         return val_loss
 

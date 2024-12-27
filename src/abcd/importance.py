@@ -61,17 +61,17 @@ def format_shap_values(shap_values, inputs, cfg: Config, columns: list[str]):
     df = df.with_columns(inputs["feature_value"])
     metadata = pl.read_parquet("data/supplement/tables/supplementary_table_1.parquet")
     df = df.join(metadata, on="variable")
-    df.write_parquet(cfg.filepaths.data.results.shap_values)
+    df.write_parquet(cfg.filepaths.data.results.shap.shap_values)
 
 
 def group_shap_values(groups: list[str], cfg: Config):
-    df = pl.read_parquet(cfg.filepaths.data.results.shap_values)
+    df = pl.read_parquet(cfg.filepaths.data.results.shap.shap_values)
     df = df.group_by(groups).agg(pl.col("shap_value", "feature_value").sum())
-    df.write_parquet(cfg.filepaths.data.results.group_shap_values)
+    df.write_parquet(cfg.filepaths.data.results.shap.group_shap_values)
 
 
 def shap_coef(cfg: Config):
-    shap_values = pl.read_parquet(cfg.filepaths.data.results.shap_values)
+    shap_values = pl.read_parquet(cfg.filepaths.data.results.shap.shap_values)
     data: list[pl.DataFrame] = []
     groups = ["question", "respondent"]
     for (question, respondent), group in shap_values.group_by(groups):
@@ -81,11 +81,11 @@ def shap_coef(cfg: Config):
         )
         data.append(bootstraps)
     df = pl.concat(data)
-    df.write_parquet(cfg.filepaths.data.results.shap_coef)
+    df.write_parquet(cfg.filepaths.data.results.shap.shap_coef)
 
 
 def group_shap_coef(groups: list[str], cfg: Config):
-    shap = pl.read_parquet(cfg.filepaths.data.results.shap_values)
+    shap = pl.read_parquet(cfg.filepaths.data.results.shap.shap_values)
     data: list[pl.DataFrame] = []
     for (dataset, respondent), group in shap.group_by(groups):
         bootstraps = bootstrap_shap_values(group, n_bootstraps=1000)
@@ -94,7 +94,7 @@ def group_shap_coef(groups: list[str], cfg: Config):
         )
         data.append(bootstraps)
     df = pl.concat(data)
-    df.write_parquet(cfg.filepaths.data.results.group_shap_coef)
+    df.write_parquet(cfg.filepaths.data.results.shap.group_shap_coef)
 
 
 def estimate_importance(cfg: Config, data_module: ABCDDataModule):

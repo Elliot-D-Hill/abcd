@@ -23,13 +23,15 @@ from abcd.tune import get_model
 def make_predictions(
     cfg: Config, data_module: ABCDDataModule
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    model = get_model(cfg=cfg)
+    model = get_model(cfg=cfg, best=True)
     model.to(cfg.device)
     trainer = make_trainer(cfg=cfg, checkpoint=False)
     predictions = trainer.predict(model, dataloaders=data_module.test_dataloader())
     outputs, labels = zip(*predictions)
     outputs = torch.concat(outputs).cpu()
-    labels = torch.concat(labels).cpu()
+    labels = torch.concat(labels).cpu().int()
+    auc = MulticlassAUROC(num_classes=outputs.shape[-1])(outputs, labels)
+    print(f"Mean AUROC: {auc.mean().item()}")
     return outputs, labels
 
 
@@ -49,6 +51,7 @@ def format_predictions(cfg: Config, outputs, labels) -> pl.DataFrame:
     test_metadata = format_metadata(lf=metadata, cfg=cfg)
     df = pl.LazyFrame({"output": outputs.cpu().numpy(), "label": labels.cpu().numpy()})
     df = pl.concat([test_metadata, df], how="horizontal")
+    df = df.with_columns(pl.col("Quartile at t", "Quartile at t+1").add(1))
     df = df.with_columns(
         pl.when(pl.col("Quartile at t").eq(4))
         .then(pl.lit("Persistence"))
@@ -234,6 +237,6 @@ def evaluate_model(cfg: Config, data_module: ABCDDataModule):
     curves = pl.concat([pr_curve, roc_curve], how="diagonal_relaxed").select(
         ["Metric", "Variable", "Group", "Quartile at t+1", "x", "y"]
     )
-    curves.write_csv(cfg.filepaths.data.results.eval.curves)
+    curves.write_parquet(cfg.filepaths.data.results.eval.curves)
     sens_spec = calc_sensitivity_and_specificity(df=df)
-    sens_spec.write_csv(cfg.filepaths.data.results.eval.sens_spec)
+    sens_spec.write_parquet(cfg.filepaths.data.results.eval.sens_spec)

@@ -13,13 +13,15 @@ FORMAT = "pdf"
 DPI = 300
 
 
-def quartile_curves(filepath: Path | str):
-    df = pl.read_parquet(filepath)
+def quartile_curves(
+    read_path: Path | str, write_path: Path | str, predictor_set: list[str]
+):
+    df = pl.read_parquet(read_path)
     df = (
         df.filter(
             pl.col("Quartile at t+1").eq(4)
             & pl.col("Variable").eq("High-risk scenario")
-            & pl.col("Predictor set").is_in(["CBCL scales", "Questionnaires"])
+            & pl.col("Predictor set").is_in(predictor_set)
             & pl.col("Factor model").eq("Within-event")
             & pl.col("y").ne(0)
         )
@@ -27,7 +29,7 @@ def quartile_curves(filepath: Path | str):
         .with_columns(
             pl.col("Metric").cast(pl.Enum(["ROC", "PR"])),
             pl.col("Group").cast(pl.Enum(["Conversion", "Persistence", "Agnostic"])),
-            pl.col("Predictor set").cast(pl.String),
+            pl.col("Predictor set").cast(pl.Enum(predictor_set)),
         )
         .sort("Predictor set", "Metric", "Group", "y")
     )
@@ -66,7 +68,7 @@ def quartile_curves(filepath: Path | str):
             )
         ax.set_ylim(0.0, 1.05)
     plt.subplots_adjust(hspace=0.3)  # , wspace=0.4
-    plt.savefig(f"data/figures/figure_2.{FORMAT}", format=FORMAT)
+    plt.savefig(write_path, format=FORMAT)
 
 
 def abs_shap_sum(lf: pl.LazyFrame):
@@ -156,7 +158,6 @@ def shap_plot(
     cbcl_names = {
         k + " cbcl syndrome scale (t-score)": v for k, v in cbcl_names.items()
     }
-
     lf.rename({"Respondent": "respondent"})
     # df = pl.read_parquet(shap_path)
     lf = lf.with_columns(pl.col("question").replace(cbcl_names))
@@ -301,18 +302,24 @@ def plot():
         path="config.toml", factor_model="within_event", analysis="questions"
     )
     # quartile_curves("data/results/all/curves.parquet")
-    quartile_curves(filepath="data/results/metrics/curves.parquet")
+    # quartile_curves(
+    #     read_path="data/results/metrics/curves.parquet",
+    #     write_path=f"data/figures/figure_2.{FORMAT}",
+    #     predictor_set=["CBCL scales", "Questionnaires"],
+    # )
+    # quartile_curves(
+    #     read_path="data/results/generalize/curves.parquet",
+    #     write_path=f"data/supplement/figures/supplementary_figure_6.{FORMAT}",
+    #     predictor_set=[
+    #         "Participant Analysis",
+    #         "Site Analysis",
+    #         "Propensity Score Weighting",
+    #     ],
+    # )
     # analysis_comparison()
     shap_values = pl.scan_parquet(cfg.filepaths.data.results.shap.shap_values)
-    abs_shap_sum(shap_values)
-    shap_scatter(shap_values)
-    shap_plot(
-        lf=shap_values,
-        filepath="data/supplement/figures/supplementary_figure_3",
-        textwrap_width=75,
-        y_axis_label="Question",
-        figsize=(14, 8),
-    )
+    # abs_shap_sum(shap_values)
+    # shap_scatter(shap_values)
     # cfg = get_config(
     #     path="config.toml", factor_model="within_event", analysis="symptoms"
     # )
@@ -326,4 +333,11 @@ def plot():
     #     y_axis_label="CBCL syndrome scale",
     #     figsize=(9, 5),
     # )
+    shap_plot(
+        lf=shap_values,
+        filepath="data/supplement/figures/supplementary_figure_3",
+        textwrap_width=80,
+        y_axis_label="Question",
+        figsize=(14, 8),
+    )
     # p_factor_model_comparison()
