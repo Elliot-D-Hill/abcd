@@ -157,10 +157,10 @@ def make_metrics(df: pl.DataFrame, n_bootstraps: int) -> pl.DataFrame:
         [bootstrapped_auroc, bootstrapped_ap],
         how="diagonal_relaxed",
     )
-    group = lf.select("Group").first().collect().item()
-    variable = lf.select("Variable").first().collect().item()
-    df = (
-        df.with_columns(
+    group = df["Group"].first()
+    variable = df["Variable"].first()
+    lf = (
+        lf.with_columns(
             pl.lit(group).cast(pl.String).alias("Group"),
             pl.lit(variable).cast(pl.String).alias("Variable"),
         )
