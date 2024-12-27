@@ -81,10 +81,15 @@ def make_labels(cfg: Config) -> pl.LazyFrame:
         .sort(cfg.index.sample_id, pl.col(cfg.index.event).cast(pl.Enum(EVENTS)))
         .with_columns(pl.col(cfg.index.site).forward_fill().over(cfg.index.sample_id))
     )
+    by = (
+        cfg.index.site
+        if cfg.experiment.analysis == cfg.index.site
+        else cfg.index.sample_id
+    )
     df = assign_splits(
         frame=df,
         splits=cfg.preprocess.splits,
-        by=cfg.experiment.split_on,
+        by=by,
         name=cfg.index.split,
     )
     df = filter_null_rows(frame=df, columns=cs.by_name(cfg.features.mh_p_cbcl.columns))

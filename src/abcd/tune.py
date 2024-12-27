@@ -39,10 +39,7 @@ class Objective:
     def __call__(self, trial: optuna.Trial):
         cfg = make_params(trial, cfg=self.cfg)
         model = get_model(cfg=cfg)
-        trainer = make_trainer(cfg=cfg, checkpoint=True)
-        path = cfg.filepaths.data.results.checkpoints / "last.ckpt"
-        if path.exists():
-            path.unlink()
+        trainer = make_trainer(cfg=cfg, checkpoint=False)
         trainer.fit(model, datamodule=self.data_module)
         val_loss = trainer.callback_metrics["val_loss"].item()
         if val_loss < self.best_val_loss:
