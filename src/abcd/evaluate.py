@@ -23,7 +23,7 @@ from abcd.tune import get_model
 def make_predictions(
     cfg: Config, data_module: ABCDDataModule
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    model = get_model(cfg=cfg)
+    model = get_model(cfg=cfg, best=True)
     model.to(cfg.device)
     trainer = make_trainer(cfg=cfg, checkpoint=False)
     predictions = trainer.predict(model, dataloaders=data_module.test_dataloader())
@@ -50,7 +50,7 @@ def format_predictions(cfg: Config, outputs, labels) -> pl.DataFrame:
     df = pl.LazyFrame({"output": outputs.cpu().numpy(), "label": labels.cpu().numpy()})
     df = pl.concat([test_metadata, df], how="horizontal")
     df = df.with_columns(
-        pl.when(pl.col("Quartile at t").eq(4))
+        pl.when(pl.col("Quartile at t").eq(3))
         .then(pl.lit("Persistence"))
         .otherwise(pl.lit("Conversion"))
         .alias("High-risk scenario")
@@ -226,6 +226,7 @@ def evaluate_model(cfg: Config, data_module: ABCDDataModule):
         partial(make_metrics, n_bootstraps=cfg.evaluation.n_bootstraps)
     )
     metrics = metrics.join(prevalence, on=["Variable", "Group", "Quartile at t+1"])
+    print(metrics)
     metrics.write_parquet(cfg.filepaths.data.results.eval.metrics)
     pr_curve = grouped_df.map_groups(
         partial(make_curve, curve=precision_recall_curve, name="PR")
