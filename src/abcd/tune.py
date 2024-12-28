@@ -11,8 +11,8 @@ from abcd.model import AutoEncoderClassifer, Network, make_trainer
 
 def make_params(trial: optuna.Trial, cfg: Config):
     hparams = cfg.hyperparameters
-    # method_index = trial.suggest_int(**hparams.model.method)
-    cfg.model.method = "autoencoder"  # cfg.tuner.methods[method_index]
+    method_index = trial.suggest_int(**hparams.model.method)
+    cfg.model.method = cfg.tuner.methods[method_index]
     cfg.model.hidden_dim = trial.suggest_int(**hparams.model.hidden_dim)
     cfg.model.num_layers = trial.suggest_int(**hparams.model.num_layers)
     cfg.model.dropout = trial.suggest_float(**hparams.model.dropout)
@@ -24,7 +24,7 @@ def make_params(trial: optuna.Trial, cfg: Config):
 
 
 def get_model(cfg: Config, best: bool):
-    if cfg.model.method == "autoencoder":
+    if True:  # FIXME cfg.model.autoencoder
         model_class = AutoEncoderClassifer
     else:
         model_class = Network

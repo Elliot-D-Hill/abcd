@@ -130,7 +130,7 @@ class Network(LightningModule):
         inputs, labels, propensity = batch
         outputs: torch.Tensor = self(inputs)
         outputs, labels, propensity = self.drop_nan(outputs, labels, propensity)
-        loss: torch.Tensor = self.criterion(outputs, labels.int())
+        loss: torch.Tensor = self.criterion(outputs, labels.long())
         if self.propensity:
             loss = loss * propensity
         loss = loss.mean()
@@ -182,9 +182,7 @@ class AutoEncoderClassifer(LightningModule):
             norm_layer=nn.LayerNorm,
             dropout=cfg.model.dropout,
         )
-        self.linear = nn.Linear(
-            in_features=cfg.model.hidden_dim, out_features=cfg.model.output_dim
-        )
+        self.model = make_architecture(cfg=cfg.model)
         self.optimizer = SGD(self.parameters(), **cfg.optimizer.model_dump())
         self.cros_entropy = nn.CrossEntropyLoss()
         self.mse = nn.MSELoss()
@@ -199,9 +197,9 @@ class AutoEncoderClassifer(LightningModule):
         inputs, labels, _ = batch
         outputs, decoding = self(inputs)
         outputs, labels, _ = drop_nan(outputs, labels, _)
-        ce_loss = self.cros_entropy(outputs, labels.int())
+        ce_loss = self.cros_entropy(outputs, labels.long())
         ce_loss += self.mse(inputs, decoding)
-        self.log_dict({f"{step}_loss": ce_loss.item()}, prog_bar=True)
+        self.log_dict({f"{step}_loss": ce_loss.item()}, prog_bar=True, sync_dist=True)
         return ce_loss
 
     def training_step(self, batch, batch_idx):
@@ -262,7 +260,7 @@ def make_architecture(cfg: Model):
     match cfg.method:
         case "linear":
             return nn.Linear(in_features=cfg.input_dim, out_features=cfg.output_dim)
-        case "mlp" | "autoencoder":
+        case "mlp":
             return MultiLayerPerceptron(**hparams)
         case "rnn":
             return sequence_model(method=nn.RNN)
