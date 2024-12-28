@@ -188,7 +188,7 @@ def make_shap_table(filepath: Path):
     return df
 
 
-def tuning_table(cfg: Config):
+def tuning_table():
     cfg = get_config("config.toml", analysis="questions", factor_model="within_event")
     df = pl.scan_parquet(cfg.filepaths.data.results.study)
     df = df.rename(lambda x: x.replace("params_", ""))
@@ -196,6 +196,27 @@ def tuning_table(cfg: Config):
     df = df.drop("number", "datetime_start", "datetime_complete", "duration", "state")
     df = df.sort("validation_loss")
     df = df.with_columns(pl.col("method").replace_strict(cfg.tuner.methods))
+    return df.collect()
+
+
+def naive_metric_table():
+    df = pl.scan_parquet("data/results/naive/metrics.parquet")
+    df = make_metric_table(lf=df)
+    predictor_sets = ["previous_p_factor"]
+    df = (
+        df.filter(
+            pl.col("Variable").eq("High-risk scenario")
+            & pl.col("Predictor set").is_in(predictor_sets)
+            & pl.col("Factor model").eq("Within-event")
+        )
+        .with_columns(
+            pl.col("Group").cast(pl.Enum(["Conversion", "Persistence", "Agnostic"])),
+            pl.col("Predictor set").cast(pl.Enum(predictor_sets)),
+        )
+        .drop("Factor model", "Variable")
+        .sort("Predictor set", "Metric", pl.col("Group").cast(GROUP_ORDER))
+        .rename({"Group": "High-risk scenario"})
+    )
     return df
 
 
@@ -209,6 +230,11 @@ def make_tables(cfg: Config):
     #     ("questions", "within_event"),
     # ]
     # aggregate_metrics(analyses=generalize, subanalysis="generalize")
+    # naive = [("previous_p_factor", "within_event")]
+    # aggregate_metrics(analyses=naive, subanalysis="naive")
+    # df = naive_metric_table()
+    # df = df.collect()
+    # print(df)
     # df = general_metric_table()
     # df = df.collect()
     # df.write_parquet("data/supplement/tables/supplementary_table_5.parquet")
@@ -229,7 +255,8 @@ def make_tables(cfg: Config):
     # metric_table.write_excel("data/supplement/tables/supplementary_table_3.xlsx")
 
     # cfg = get_config("config.toml", analysis="questions", factor_model="within_event")
-    # shap_table = make_shap_table(filepath=cfg.filepaths.data.results.shap_values)
-    tune_table = tuning_table(cfg=cfg).drop_nulls()
-    # shap_table.write_excel("data/supplement/tables/supplementary_table_4.xlsx")
+    shap_table = make_shap_table(filepath=cfg.filepaths.data.results.shap.shap_values)
+    # tune_table = tuning_table()
+    shap_table = shap_table.collect()
+    shap_table.write_excel("data/supplement/tables/supplementary_table_4.xlsx")
     # tune_table.write_excel("data/supplement/tables/supplementary_table_5.xlsx")

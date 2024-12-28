@@ -23,13 +23,20 @@ from abcd.tune import get_model
 def make_predictions(
     cfg: Config, data_module: ABCDDataModule
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    model = get_model(cfg=cfg, best=True)
-    model.to(cfg.device)
-    trainer = make_trainer(cfg=cfg, checkpoint=False)
-    predictions = trainer.predict(model, dataloaders=data_module.test_dataloader())
-    outputs, labels = zip(*predictions)
-    outputs = torch.concat(outputs).cpu()
-    labels = torch.concat(labels).cpu().int()
+    if cfg.experiment.analysis == "previous_p_factor":
+        df = pl.read_parquet(
+            "data/analyses/within_event/previous_p_factor/analytic/metadata.parquet"
+        )
+        outputs = torch.tensor(df["y_t"].to_dummies().to_numpy()).float()
+        labels = torch.tensor(df["y_{t+1}"].to_numpy()).int()
+    else:
+        model = get_model(cfg=cfg, best=True)
+        model.to(cfg.device)
+        trainer = make_trainer(cfg=cfg, checkpoint=False)
+        predictions = trainer.predict(model, dataloaders=data_module.test_dataloader())
+        outputs, labels = zip(*predictions)
+        outputs = torch.concat(outputs).cpu()
+        labels = torch.concat(labels).cpu().int()
     auc = MulticlassAUROC(num_classes=outputs.shape[-1])(outputs, labels)
     print(f"Mean AUROC: {auc.mean().item()}")
     return outputs, labels
@@ -223,6 +230,7 @@ def evaluate_model(cfg: Config, data_module: ABCDDataModule):
         pl.lit("Agnostic").alias("Group")
     )
     df = pl.concat([df_all, df]).drop_nulls("Group")
+    df = df.drop_nulls()
     grouped_df = df.group_by("Variable", "Group", maintain_order=True)
     prevalence = make_prevalence(df)
     metrics = grouped_df.map_groups(
