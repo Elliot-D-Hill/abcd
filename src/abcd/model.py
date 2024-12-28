@@ -6,11 +6,13 @@ from lightning import LightningModule, Trainer
 from lightning.pytorch.callbacks import (
     ModelCheckpoint,
     RichProgressBar,
+    StochasticWeightAveraging,
 )
 from lightning.pytorch.loggers import TensorBoardLogger
 from torch import nn
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from torch.optim.sgd import SGD
+from torchmetrics import AUROC
 from torchvision.ops import MLP
 
 from abcd.config import Config, Model
@@ -122,7 +124,7 @@ class Network(LightningModule):
         self.optimizer = SGD(self.model.parameters(), **cfg.optimizer.dict())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
         self.propensity = cfg.experiment.analysis == "propensity"
-        self.mse = nn.MSELoss()
+        self.auroc = AUROC(num_classes=cfg.model.output_dim, task="multiclass")
 
     def forward(self, inputs):
         return self.model(inputs)
@@ -130,12 +132,15 @@ class Network(LightningModule):
     def step(self, step: str, batch: tuple[torch.Tensor, ...]):
         inputs, labels, propensity = batch
         outputs: torch.Tensor = self(inputs)
-        outputs, labels, propensity = self.drop_nan(outputs, labels, propensity)
-        loss: torch.Tensor = self.criterion(outputs, labels.long())
+        outputs, labels, propensity = drop_nan(outputs, labels, propensity)
+        labels = labels.long()
+        loss: torch.Tensor = self.criterion(outputs, labels)
         if self.propensity:
             loss = loss * propensity
         loss = loss.mean()
-        self.log_dict({f"{step}_loss": loss}, prog_bar=True)
+        if step == "val":
+            self.auroc(outputs, labels)
+        self.log_dict({f"{step}_loss": loss, "val_auroc": self.auroc}, prog_bar=True)
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -152,13 +157,13 @@ class Network(LightningModule):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         inputs, labels, _ = batch
         outputs = self(inputs)
-        outputs, labels, _ = self.drop_nan(outputs, labels, _)
+        outputs, labels, _ = drop_nan(outputs, labels, _)
         return outputs, labels
 
     def configure_optimizers(self):
         scheduler_cfg = {
             "scheduler": self.scheduler,
-            "interval": "step",
+            "interval": "epoch",
             "frequency": 1,
         }
         return {"optimizer": self.optimizer, "lr_scheduler": scheduler_cfg}
@@ -188,6 +193,7 @@ class AutoEncoderClassifer(LightningModule):
         self.optimizer = SGD(self.parameters(), **cfg.optimizer.model_dump())
         self.cros_entropy = nn.CrossEntropyLoss()
         self.mse = nn.MSELoss()
+        self.auroc = AUROC(num_classes=cfg.model.output_dim, task="multiclass")
 
     def forward(self, inputs):
         encoding = self.encoder(inputs)
@@ -201,6 +207,8 @@ class AutoEncoderClassifer(LightningModule):
         outputs, labels, _ = drop_nan(outputs, labels, _)
         ce_loss = self.cros_entropy(outputs, labels.long())
         ce_loss += self.mse(inputs, decoding)
+        if step == "val":
+            self.auroc(outputs, labels)
         self.log_dict({f"{step}_loss": ce_loss.item()}, prog_bar=True, sync_dist=True)
         return ce_loss
 
@@ -225,8 +233,11 @@ class AutoEncoderClassifer(LightningModule):
         return {"optimizer": self.optimizer}
 
 
-def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
-    callbacks: list = []
+def make_trainer(
+    cfg: Config, checkpoint: bool, callbacks: list | None = None
+) -> Trainer:
+    if callbacks is None:
+        callbacks = []
     if cfg.trainer.enable_progress_bar:
         callbacks.append(RichProgressBar())
     if checkpoint:
@@ -238,10 +249,11 @@ def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
             save_top_k=0,
         )
         callbacks.append(checkpoint_callback)
+    swa_callback = StochasticWeightAveraging(swa_lrs=cfg.trainer.swa_lrs)
+    callbacks.append(swa_callback)
     logger = TensorBoardLogger(save_dir=cfg.filepaths.data.results.logs)
     logger = logger if cfg.log else False
     num_nodes = int(os.environ.get("SLURM_JOB_NUM_NODES", 1))
-    print(f"Number of nodes: {num_nodes}")
     trainer = Trainer(
         logger=logger,
         callbacks=callbacks,
@@ -251,9 +263,8 @@ def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
         strategy="auto",
         log_every_n_steps=cfg.logging.log_every_n_steps,
         fast_dev_run=cfg.fast_dev_run,
-        limit_val_batches=0,
         enable_checkpointing=checkpoint,
-        **cfg.trainer.model_dump(),
+        **cfg.trainer.model_dump(exclude={"swa_lrs"}),
     )
     return trainer
 

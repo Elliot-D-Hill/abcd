@@ -1,6 +1,8 @@
 import optuna
 import polars as pl
 import torch
+from optuna.integration import PyTorchLightningPruningCallback
+from optuna.pruners import HyperbandPruner
 from optuna.samplers import QMCSampler, TPESampler
 from torchmetrics.functional.classification import multiclass_auroc
 
@@ -58,22 +60,33 @@ class Objective:
     def __call__(self, trial: optuna.Trial):
         cfg = make_params(trial, cfg=self.cfg)
         model = get_model(cfg=cfg, best=False)
-        trainer = make_trainer(cfg=cfg, checkpoint=False)
+        pruning_callback = PyTorchLightningPruningCallback(trial, monitor="val_loss")
+        trainer = make_trainer(cfg=cfg, checkpoint=False, callbacks=[pruning_callback])
         trainer.fit(model, datamodule=self.data_module)
         val_loss = trainer.callback_metrics["val_loss"].item()
+        val_auroc = trainer.callback_metrics["val_auroc"].item()
+        text = ""
         if val_loss < self.best_val_loss:
+            text += "Lowest loss yet: "
             self.best_val_loss = val_loss
             path = cfg.filepaths.data.results.checkpoints / "best.ckpt"
             trainer.save_checkpoint(path)
-        auroc_score = auc(trainer, model=model, data_module=self.data_module)
-        print("AUC:", auroc_score)
+        text += f"Trial: {trial.number}, Loss: {val_loss}, AUROC: {val_auroc}"
+        print(text)
         return val_loss
 
 
 def tune_model(cfg: Config, data_module):
     sampler = QMCSampler(seed=cfg.random_seed)
+    pruner = HyperbandPruner(
+        min_resource=cfg.hyperparameters.trainer.max_epochs["low"],
+        max_resource=cfg.hyperparameters.trainer.max_epochs["high"],
+    )
     study = optuna.create_study(
-        sampler=sampler, direction="minimize", study_name="ABCD"
+        sampler=sampler,
+        pruner=pruner,
+        direction="minimize",
+        study_name="ABCD",
     )
     objective = Objective(cfg=cfg, data_module=data_module)
     half_trials = cfg.tuner.n_trials // 2

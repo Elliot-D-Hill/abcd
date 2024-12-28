@@ -40,6 +40,7 @@ class Dataloader(BaseModel):
 class Trainer(BaseModel):
     gradient_clip_val: float
     max_epochs: int
+    swa_lrs: float
     enable_model_summary: bool
     enable_progress_bar: bool
 
@@ -85,6 +86,7 @@ class OptimizerHParams(BaseModel):
 
 class TrainerHParams(BaseModel):
     max_epochs: dict
+    swa_lrs: dict
 
 
 class Hyperparameters(BaseModel):
