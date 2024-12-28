@@ -154,17 +154,7 @@ class Network(LightningModule):
             return outputs, labels, propensity
         return outputs, labels, propensity
 
-    def autoencoder_step(self, step: str, batch: tuple[torch.Tensor, ...]):
-        inputs, labels, propensity = batch
-        outputs, decoding = self(inputs)
-        outputs, labels, propensity = self.drop_nan(outputs, labels, propensity)
-        mse_loss = self.mse(inputs, decoding)
-        loss = self.criterion(outputs, labels.long())
-        loss = mse_loss + loss.mean()
-        self.log_dict({f"{step}_loss": loss}, prog_bar=True)
-        return loss
-
-    def classifer_step(self, step: str, batch: tuple[torch.Tensor, ...]):
+    def step(self, step: str, batch: tuple[torch.Tensor, ...]):
         inputs, labels, propensity = batch
         outputs: torch.Tensor = self(inputs)
         outputs, labels, propensity = self.drop_nan(outputs, labels, propensity)
@@ -174,11 +164,6 @@ class Network(LightningModule):
         loss = loss.mean()
         self.log_dict({f"{step}_loss": loss}, prog_bar=True)
         return loss
-
-    def step(self, step: str, batch: tuple[torch.Tensor, ...]):
-        if isinstance(self.model, AutoEncoderClassifer):
-            return self.autoencoder_step(step, batch)
-        return self.classifer_step(step, batch)
 
     def training_step(self, batch, batch_idx):
         return self.step("train", batch)
@@ -228,18 +213,20 @@ def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
         logger=logger,
         callbacks=callbacks,
         accelerator="auto",
-        devices="auto",
+        devices=-1,
+        num_nodes=4,  # TODO get from environment
+        strategy="auto",
         log_every_n_steps=cfg.logging.log_every_n_steps,
         fast_dev_run=cfg.fast_dev_run,
         check_val_every_n_epoch=1,
         enable_checkpointing=checkpoint,
-        **cfg.trainer.dict(),
+        **cfg.trainer.model_dump(),
     )
     return trainer
 
 
 def make_architecture(cfg: Model):
-    hparams = cfg.dict(exclude={"method"})
+    hparams = cfg.model_dump(exclude={"method"})
     sequence_model = partial(SequenceModel, **hparams)
     match cfg.method:
         case "linear":
