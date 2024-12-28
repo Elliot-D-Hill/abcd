@@ -50,8 +50,8 @@ class FileDataset(Dataset):
     def __getitem__(self, index) -> tuple[torch.Tensor, ...]:
         filepath = self.files[index]
         data = np.load(filepath)
-        features = torch.tensor(data["features"], dtype=torch.float32)
-        labels = torch.tensor(data["label"], dtype=torch.int64)
+        features = torch.tensor(data["features"], dtype=torch.float)
+        labels = torch.tensor(data["label"], dtype=torch.long)
         return features, labels, torch.tensor([1.0] * labels.size(0))
 
 

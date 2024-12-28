@@ -161,22 +161,14 @@ class AutoEncoderClassifer(LightningModule):
     def __init__(self, cfg: Config):
         super().__init__()
         self.save_hyperparameters(logger=False)
-        hidden_channels = [cfg.model.hidden_dim] * cfg.model.num_layers
-        self.encoder = MLP(
-            in_channels=cfg.model.input_dim,
-            hidden_channels=hidden_channels,
-            activation_layer=nn.ReLU,
-            norm_layer=nn.LayerNorm,
-            dropout=cfg.model.dropout,
+        self.encoder = nn.Linear(
+            in_features=cfg.model.input_dim, out_features=cfg.model.hidden_dim
         )
-        self.decoder = MLP(
-            in_channels=cfg.model.hidden_dim,
-            hidden_channels=hidden_channels + [cfg.model.input_dim],
-            activation_layer=nn.ReLU,
-            norm_layer=nn.LayerNorm,
-            dropout=cfg.model.dropout,
+        self.decoder = nn.Linear(
+            in_features=cfg.model.hidden_dim, out_features=cfg.model.input_dim
         )
         cfg.model.input_dim = cfg.model.hidden_dim
+        cfg.model.method = "mlp"
         self.model = make_architecture(cfg=cfg.model)
         self.optimizer = SGD(self.parameters(), **cfg.optimizer.model_dump())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
@@ -186,17 +178,17 @@ class AutoEncoderClassifer(LightningModule):
             num_classes=cfg.model.output_dim, task="multiclass", ignore_index=-100
         )
 
-    def forward(self, inputs):
-        encoding = self.encoder(inputs)
-        decoding = self.decoder(encoding)
-        output = self.model(encoding)
-        return output, decoding
+    def forward(self, encodings):
+        return self.model(encodings)
 
     def step(self, step: str, batch: tuple[torch.Tensor, ...]):
         inputs, labels, _ = batch
-        outputs, decoding = self(inputs)
-        loss = self.cros_entropy(outputs, labels)
-        loss += self.mse(inputs, decoding)
+        encoding = self.encoder(inputs)
+        decoding = self.decoder(encoding)
+        mse_loss = self.mse(inputs, decoding)
+        outputs = self(inputs)
+        ce_loss = self.cros_entropy(outputs, labels)
+        loss = ce_loss + mse_loss
         if step == "val":
             self.auroc(outputs, labels)
             self.log("val_auroc", self.auroc, prog_bar=True)
@@ -215,8 +207,8 @@ class AutoEncoderClassifer(LightningModule):
     def predict_step(
         self, batch: tuple[torch.Tensor, ...], batch_idx, dataloader_idx=0
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        inputs, labels, propensity = batch
-        outputs, decoding = self(inputs)
+        inputs, labels, _ = batch
+        outputs = self(inputs)
         return outputs, labels
 
     def configure_optimizers(self):
@@ -253,9 +245,9 @@ def make_trainer(
         logger=logger,
         callbacks=callbacks,
         accelerator="auto",
-        devices=1,
+        devices="auto",
         num_nodes=num_nodes,
-        strategy="auto",
+        strategy="ddp",
         log_every_n_steps=cfg.logging.log_every_n_steps,
         fast_dev_run=cfg.fast_dev_run,
         enable_checkpointing=checkpoint,

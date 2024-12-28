@@ -19,6 +19,7 @@ from abcd.dataset import ABCDDataModule
 from abcd.model import make_trainer
 from abcd.tune import get_model
 
+IGNORE_INDEX = -100
 
 def make_predictions(
     cfg: Config, data_module: ABCDDataModule
@@ -37,7 +38,7 @@ def make_predictions(
         outputs, labels = zip(*predictions)
         outputs = torch.concat(outputs).cpu()
         labels = torch.concat(labels).cpu().int()
-    auc = MulticlassAUROC(num_classes=outputs.shape[-1])(outputs, labels)
+    auc = MulticlassAUROC(num_classes=outputs.shape[-1], ignore_index=IGNORE_INDEX)(outputs, labels)
     print(f"Mean AUROC: {auc.mean().item()}")
     return outputs, labels
 
@@ -154,7 +155,7 @@ def make_metrics(df: pl.DataFrame, n_bootstraps: int) -> pl.DataFrame:
         )
     outputs, labels = get_outputs_labels(df)
     auroc = MulticlassAUROC(num_classes=outputs.shape[-1], average="none")
-    ap = MulticlassAveragePrecision(num_classes=outputs.shape[-1], average="none")
+    ap = MulticlassAveragePrecision(num_classes=outputs.shape[-1], average="none", ignore_index=IGNORE_INDEX)
     bootstrapped_auroc = bootstrap_metric(
         auroc, outputs, labels, n_bootstraps=n_bootstraps
     ).with_columns(pl.lit("AUROC").alias("Metric"))
@@ -185,7 +186,7 @@ def calc_sensitivity_and_specificity(df: pl.DataFrame):
     outputs, labels = get_outputs_labels(df=df)
     min_sensitivity = 0.5
     specificity_metric = MulticlassSpecificityAtSensitivity(
-        num_classes=outputs.shape[-1], min_sensitivity=min_sensitivity
+        num_classes=outputs.shape[-1], min_sensitivity=min_sensitivity, ignore_index=IGNORE_INDEX
     )
     specificity, threshold = specificity_metric(outputs, labels)
     specificity_df = pl.DataFrame(
@@ -199,7 +200,7 @@ def calc_sensitivity_and_specificity(df: pl.DataFrame):
     )
     min_specificity = 0.5
     sensitivity_metric = MulticlassSensitivityAtSpecificity(
-        num_classes=outputs.shape[-1], min_specificity=min_specificity
+        num_classes=outputs.shape[-1], min_specificity=min_specificity, ignore_index=IGNORE_INDEX
     )
     sensitivity, threshold = sensitivity_metric(outputs, labels)
     sensitivity_df = pl.DataFrame(

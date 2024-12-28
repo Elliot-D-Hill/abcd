@@ -1,3 +1,4 @@
+import os
 from itertools import product
 
 import polars as pl
@@ -57,4 +58,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    is_primary = os.environ.get("IS_PTL_PRIMARY") is None
+    os.environ["IS_PTL_PRIMARY"] = "yes"
+    ## code to run on each GPU
+    if is_primary:
+        main()

@@ -8,7 +8,7 @@ from torchmetrics.functional.classification import multiclass_auroc
 
 from abcd.config import Config
 from abcd.dataset import ABCDDataModule
-from abcd.model import Network, make_trainer
+from abcd.model import AutoEncoderClassifer, Network, make_trainer
 
 
 def make_params(trial: optuna.Trial, cfg: Config):
@@ -28,10 +28,10 @@ def make_params(trial: optuna.Trial, cfg: Config):
 
 
 def get_model(cfg: Config, best: bool):
-    # if cfg.experiment.analysis in {"mri_all", "questions_mri_all"}:
-    #     model_class = AutoEncoderClassifer
-    # else:
-    model_class = Network
+    if cfg.experiment.analysis in {"mri_all", "questions_mri_all"}:
+        model_class = AutoEncoderClassifer
+    else:
+        model_class = Network
     if best:
         filepath = cfg.filepaths.data.results.best_model
         return model_class.load_from_checkpoint(checkpoint_path=filepath)
@@ -46,7 +46,7 @@ def auc(trainer, model, data_module):
     labels = torch.cat([x[1] for x in predictions])
     return multiclass_auroc(
         preds=outputs,
-        target=labels.int(),
+        target=labels,
         num_classes=outputs.shape[-1],
         average="none",
     )
@@ -72,8 +72,11 @@ class Objective:
             self.best_val_loss = val_loss
             path = cfg.filepaths.data.results.checkpoints / "best.ckpt"
             trainer.save_checkpoint(path)
-        text += f"Trial: {trial.number}, Loss: {val_loss}, AUROC: {val_auroc}"
-        print(text)
+        if trainer.is_global_zero:
+            text += f"Trial: {trial.number}, Loss: {val_loss}, Mean AUROC: {val_auroc}"
+            auroc = auc(trainer, model, self.data_module)
+            text += f", AUROC: {auroc}"
+            print(text)
         return val_loss
 
 
