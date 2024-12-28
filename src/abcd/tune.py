@@ -19,7 +19,7 @@ def make_params(trial: optuna.Trial, cfg: Config):
     cfg.optimizer.lr = trial.suggest_float(**hparams.optimizer.lr)
     cfg.optimizer.momentum = trial.suggest_float(**hparams.optimizer.momentum)
     cfg.optimizer.weight_decay = trial.suggest_float(**hparams.optimizer.weight_decay)
-    cfg.trainer.max_epochs = 1  # trial.suggest_int(**hparams.trainer.max_epochs)
+    cfg.trainer.max_epochs = trial.suggest_int(**hparams.trainer.max_epochs)
     return cfg
 
 
