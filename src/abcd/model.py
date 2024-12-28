@@ -100,31 +100,16 @@ class Transformer(nn.Module):
         return out
 
 
-class AutoEncoderClassifer(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers, dropout):
-        super().__init__()
-        hidden_channels: list[int] = [hidden_dim] * num_layers
-        self.encoder = MLP(
-            in_channels=input_dim,
-            hidden_channels=hidden_channels,
-            activation_layer=nn.ReLU,
-            norm_layer=nn.LayerNorm,
-            dropout=dropout,
-        )
-        self.decoder = MLP(
-            in_channels=hidden_dim,
-            hidden_channels=hidden_channels + [input_dim],
-            activation_layer=nn.ReLU,
-            norm_layer=nn.LayerNorm,
-            dropout=dropout,
-        )
-        self.linear = nn.Linear(in_features=hidden_dim, out_features=output_dim)
-
-    def forward(self, x):
-        encoding = self.encoder(x)
-        decoding = self.decoder(encoding)
-        output = self.linear(encoding)
-        return output, decoding
+def drop_nan(
+    outputs: torch.Tensor, labels: torch.Tensor, propensity: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    is_not_nan = ~torch.isnan(labels).flatten()
+    outputs = outputs.flatten(0, 1)
+    outputs = outputs[is_not_nan]
+    labels = labels.flatten()
+    labels = labels[is_not_nan]
+    propensity = propensity.flatten()[is_not_nan]
+    return outputs, labels, propensity
 
 
 class Network(LightningModule):
@@ -141,24 +126,11 @@ class Network(LightningModule):
     def forward(self, inputs):
         return self.model(inputs)
 
-    def drop_nan(
-        self, outputs: torch.Tensor, labels: torch.Tensor, propensity: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        is_not_nan = ~torch.isnan(labels).flatten()
-        outputs = outputs.flatten(0, 1)
-        outputs = outputs[is_not_nan]
-        labels = labels.flatten()
-        labels = labels[is_not_nan]
-        if self.propensity:
-            propensity = propensity.flatten()[is_not_nan]
-            return outputs, labels, propensity
-        return outputs, labels, propensity
-
     def step(self, step: str, batch: tuple[torch.Tensor, ...]):
         inputs, labels, propensity = batch
         outputs: torch.Tensor = self(inputs)
         outputs, labels, propensity = self.drop_nan(outputs, labels, propensity)
-        loss: torch.Tensor = self.criterion(outputs, labels.long())
+        loss: torch.Tensor = self.criterion(outputs, labels.int())
         if self.propensity:
             loss = loss * propensity
         loss = loss.mean()
@@ -178,10 +150,7 @@ class Network(LightningModule):
         self, batch: tuple[torch.Tensor, ...], batch_idx, dataloader_idx=0
     ) -> tuple[torch.Tensor, torch.Tensor]:
         inputs, labels, _ = batch
-        if isinstance(self.model, AutoEncoderClassifer):
-            outputs, _ = self(inputs)
-        else:
-            outputs = self(inputs)
+        outputs = self(inputs)
         outputs, labels, _ = self.drop_nan(outputs, labels, _)
         return outputs, labels
 
@@ -192,6 +161,68 @@ class Network(LightningModule):
             "frequency": 1,
         }
         return {"optimizer": self.optimizer, "lr_scheduler": scheduler_cfg}
+
+
+class AutoEncoderClassifer(LightningModule):
+    def __init__(self, cfg: Config):
+        super().__init__()
+        self.save_hyperparameters(logger=False)
+        hidden_channels = [cfg.model.hidden_dim] * cfg.model.num_layers
+        self.encoder = MLP(
+            in_channels=cfg.model.input_dim,
+            hidden_channels=hidden_channels,
+            activation_layer=nn.ReLU,
+            norm_layer=nn.LayerNorm,
+            dropout=cfg.model.dropout,
+        )
+        self.decoder = MLP(
+            in_channels=cfg.model.hidden_dim,
+            hidden_channels=hidden_channels + [cfg.model.input_dim],
+            activation_layer=nn.ReLU,
+            norm_layer=nn.LayerNorm,
+            dropout=cfg.model.dropout,
+        )
+        self.linear = nn.Linear(
+            in_features=cfg.model.hidden_dim, out_features=cfg.model.output_dim
+        )
+        self.optimizer = SGD(self.parameters(), **cfg.optimizer.model_dump())
+        self.cros_entropy = nn.CrossEntropyLoss()
+        self.mse = nn.MSELoss()
+
+    def forward(self, inputs):
+        encoding = self.encoder(inputs)
+        decoding = self.decoder(encoding)
+        output = self.linear(encoding)
+        return output, decoding
+
+    def step(self, step: str, batch: tuple[torch.Tensor, ...]):
+        inputs, labels, _ = batch
+        outputs, decoding = self(inputs)
+        outputs, labels, _ = drop_nan(outputs, labels, _)
+        ce_loss = self.cros_entropy(outputs, labels.int())
+        ce_loss += self.mse(inputs, decoding)
+        self.log_dict({f"{step}_loss": ce_loss.item()}, prog_bar=True)
+        return ce_loss
+
+    def training_step(self, batch, batch_idx):
+        return self.step("train", batch)
+
+    def validation_step(self, batch, batch_idx):
+        return self.step("val", batch)
+
+    def test_step(self, batch, batch_idx):
+        self.step("test", batch)
+
+    def predict_step(
+        self, batch: tuple[torch.Tensor, ...], batch_idx, dataloader_idx=0
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        inputs, labels, propensity = batch
+        outputs, decoding = self(inputs)
+        outputs, labels, _ = drop_nan(outputs, labels, propensity)
+        return outputs, labels
+
+    def configure_optimizers(self):
+        return {"optimizer": self.optimizer}
 
 
 def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
@@ -231,14 +262,12 @@ def make_architecture(cfg: Model):
     match cfg.method:
         case "linear":
             return nn.Linear(in_features=cfg.input_dim, out_features=cfg.output_dim)
-        case "mlp":
+        case "mlp" | "autoencoder":
             return MultiLayerPerceptron(**hparams)
         case "rnn":
             return sequence_model(method=nn.RNN)
         case "lstm":
             return sequence_model(method=nn.LSTM)
-        case "autoencoder":
-            return AutoEncoderClassifer(**hparams)
         case "transformer":
             return Transformer(num_heads=4, **hparams)
         case _:

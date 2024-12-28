@@ -6,13 +6,13 @@ from torchmetrics.functional.classification import multiclass_auroc
 
 from abcd.config import Config
 from abcd.dataset import ABCDDataModule
-from abcd.model import Network, make_trainer
+from abcd.model import AutoEncoderClassifer, Network, make_trainer
 
 
 def make_params(trial: optuna.Trial, cfg: Config):
     hparams = cfg.hyperparameters
-    method_index = trial.suggest_int(**hparams.model.method)
-    cfg.model.method = cfg.tuner.methods[method_index]
+    # method_index = trial.suggest_int(**hparams.model.method)
+    cfg.model.method = "autoencoder"  # cfg.tuner.methods[method_index]
     cfg.model.hidden_dim = trial.suggest_int(**hparams.model.hidden_dim)
     cfg.model.num_layers = trial.suggest_int(**hparams.model.num_layers)
     cfg.model.dropout = trial.suggest_float(**hparams.model.dropout)
@@ -24,18 +24,25 @@ def make_params(trial: optuna.Trial, cfg: Config):
 
 
 def get_model(cfg: Config, best: bool):
+    if cfg.model.method == "autoencoder":
+        model_class = AutoEncoderClassifer
+    else:
+        model_class = Network
     if best:
         filepath = cfg.filepaths.data.results.best_model
-        return Network.load_from_checkpoint(checkpoint_path=filepath)
-    return Network(cfg=cfg)
+        return model_class.load_from_checkpoint(checkpoint_path=filepath)
+    return model_class(cfg=cfg)
 
 
-def auc(predictions):
+def auc(trainer, model, data_module):
+    predictions = trainer.predict(model, dataloaders=data_module.val_dataloader())
+    if predictions is None:
+        return float("inf")
     outputs = torch.cat([x[0] for x in predictions])
     labels = torch.cat([x[1] for x in predictions])
     return multiclass_auroc(
         preds=outputs,
-        target=labels.long(),
+        target=labels.int(),
         num_classes=outputs.shape[-1],
         average="none",
     )
@@ -55,15 +62,9 @@ class Objective:
         val_loss = trainer.callback_metrics["val_loss"].item()
         if val_loss < self.best_val_loss:
             self.best_val_loss = val_loss
-            trainer.save_checkpoint(
-                cfg.filepaths.data.results.checkpoints / "best.ckpt"
-            )
-        predictions = trainer.predict(
-            model, dataloaders=self.data_module.val_dataloader()
-        )
-        if predictions is None:
-            return float("inf")
-        auroc_score = auc(predictions)
+            path = cfg.filepaths.data.results.checkpoints / "best.ckpt"
+            trainer.save_checkpoint(path)
+        auroc_score = auc(trainer, model=model, data_module=self.data_module)
         print("AUC:", auroc_score)
         return val_loss
 
