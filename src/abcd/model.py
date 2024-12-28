@@ -250,7 +250,7 @@ def make_trainer(
         accelerator="auto",
         devices="auto",
         num_nodes=num_nodes,
-        strategy="auto",
+        strategy="ddp",
         log_every_n_steps=cfg.logging.log_every_n_steps,
         fast_dev_run=cfg.fast_dev_run,
         enable_checkpointing=checkpoint,
