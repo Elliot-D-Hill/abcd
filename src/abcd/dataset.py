@@ -16,7 +16,7 @@ def make_tensor_dataset(cfg: Config, dataset: pl.DataFrame):
     for df in dataset.partition_by(
         cfg.index.sample_id, maintain_order=True, include_key=False
     ):
-        labels = df[cfg.index.label].to_torch().float()
+        labels = df[cfg.index.label].to_torch().long()
         inputs = df.select(features).to_torch(dtype=pl.Float32)
         if cfg.experiment.analysis == "propensity":
             propensity = df.select(cfg.index.propensity).to_torch(dtype=pl.Float32)
@@ -51,14 +51,14 @@ class FileDataset(Dataset):
         filepath = self.files[index]
         data = np.load(filepath)
         features = torch.tensor(data["features"], dtype=torch.float32)
-        labels = torch.tensor(data["label"], dtype=torch.float32)
+        labels = torch.tensor(data["label"], dtype=torch.int64)
         return features, labels, torch.tensor([1.0] * labels.size(0))
 
 
 def collate_fn(batch):
     features, labels, propensity = zip(*batch)
     features = pad_sequence(features, batch_first=True, padding_value=0)
-    labels = pad_sequence(labels, batch_first=True, padding_value=torch.nan).squeeze(-1)
+    labels = pad_sequence(labels, batch_first=True, padding_value=-100)
     propensity = pad_sequence(propensity, batch_first=True, padding_value=torch.nan)
     return features, labels, propensity
 

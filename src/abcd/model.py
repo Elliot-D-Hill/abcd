@@ -103,28 +103,18 @@ class Transformer(nn.Module):
         return out
 
 
-def drop_nan(
-    outputs: torch.Tensor, labels: torch.Tensor, propensity: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    is_not_nan = ~torch.isnan(labels).flatten()
-    outputs = outputs.flatten(0, 1)
-    outputs = outputs[is_not_nan]
-    labels = labels.flatten()
-    labels = labels[is_not_nan].long()
-    propensity = propensity.flatten()[is_not_nan]
-    return outputs, labels, propensity
-
-
 class Network(LightningModule):
     def __init__(self, cfg: Config):
         super().__init__()
         self.save_hyperparameters(logger=False)
         self.model = make_architecture(cfg=cfg.model)
-        self.criterion = nn.CrossEntropyLoss(reduction="none")
+        self.criterion = nn.CrossEntropyLoss(reduction="none", ignore_index=-100)
         self.optimizer = SGD(self.parameters(), **cfg.optimizer.dict())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
         self.propensity = cfg.experiment.analysis == "propensity"
-        self.auroc = AUROC(num_classes=cfg.model.output_dim, task="multiclass")
+        self.auroc = AUROC(
+            num_classes=cfg.model.output_dim, task="multiclass", ignore_index=-100
+        )
 
     def forward(self, inputs):
         return self.model(inputs)
@@ -132,14 +122,14 @@ class Network(LightningModule):
     def step(self, step: str, batch: tuple[torch.Tensor, ...]):
         inputs, labels, propensity = batch
         outputs: torch.Tensor = self(inputs)
-        outputs, labels, propensity = drop_nan(outputs, labels, propensity)
         loss: torch.Tensor = self.criterion(outputs, labels)
         if self.propensity:
             loss = loss * propensity
         loss = loss.mean()
         if step == "val":
             self.auroc(outputs, labels)
-        self.log_dict({f"{step}_loss": loss, "val_auroc": self.auroc}, prog_bar=True)
+            self.log("val_auroc", self.auroc, prog_bar=True, sync_dist=True)
+        self.log(f"{step}_loss", loss, prog_bar=True, sync_dist=True)
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -156,7 +146,6 @@ class Network(LightningModule):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         inputs, labels, _ = batch
         outputs = self(inputs)
-        outputs, labels, _ = drop_nan(outputs, labels, _)
         return outputs, labels
 
     def configure_optimizers(self):
@@ -191,9 +180,11 @@ class AutoEncoderClassifer(LightningModule):
         self.model = make_architecture(cfg=cfg.model)
         self.optimizer = SGD(self.parameters(), **cfg.optimizer.model_dump())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
-        self.cros_entropy = nn.CrossEntropyLoss()
+        self.cros_entropy = nn.CrossEntropyLoss(ignore_index=-100)
         self.mse = nn.MSELoss()
-        self.auroc = AUROC(num_classes=cfg.model.output_dim, task="multiclass")
+        self.auroc = AUROC(
+            num_classes=cfg.model.output_dim, task="multiclass", ignore_index=-100
+        )
 
     def forward(self, inputs):
         encoding = self.encoder(inputs)
@@ -204,14 +195,12 @@ class AutoEncoderClassifer(LightningModule):
     def step(self, step: str, batch: tuple[torch.Tensor, ...]):
         inputs, labels, _ = batch
         outputs, decoding = self(inputs)
-        outputs, labels, _ = drop_nan(outputs, labels, _)
         loss = self.cros_entropy(outputs, labels)
         loss += self.mse(inputs, decoding)
-        metrics = {f"{step}_loss": loss.item()}
         if step == "val":
             self.auroc(outputs, labels)
-            metrics["val_auroc"] = self.auroc(outputs, labels).item()
-        self.log_dict(metrics, prog_bar=True, sync_dist=True)
+            self.log("val_auroc", self.auroc, prog_bar=True, sync_dist=True)
+        self.log(f"{step}_loss", loss, prog_bar=True, sync_dist=True)
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -228,7 +217,6 @@ class AutoEncoderClassifer(LightningModule):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         inputs, labels, propensity = batch
         outputs, decoding = self(inputs)
-        outputs, labels, _ = drop_nan(outputs, labels, propensity)
         return outputs, labels
 
     def configure_optimizers(self):
