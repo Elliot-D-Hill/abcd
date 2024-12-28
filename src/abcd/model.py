@@ -168,7 +168,8 @@ class AutoEncoderClassifer(LightningModule):
             in_features=cfg.model.hidden_dim, out_features=cfg.model.input_dim
         )
         cfg.model.input_dim = cfg.model.hidden_dim
-        cfg.model.method = "mlp"
+        # cfg.model.num_layers = 1
+        # cfg.model.method = "mlp"
         self.model = make_architecture(cfg=cfg.model)
         self.optimizer = SGD(self.parameters(), **cfg.optimizer.model_dump())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
@@ -186,7 +187,9 @@ class AutoEncoderClassifer(LightningModule):
         encoding = self.encoder(inputs)
         decoding = self.decoder(encoding)
         mse_loss = self.mse(inputs, decoding)
-        outputs = self(inputs)
+        outputs = self(encoding)
+        outputs = outputs.view(-1, outputs.size(-1))
+        labels = labels.view(-1)
         ce_loss = self.cros_entropy(outputs, labels)
         loss = ce_loss + mse_loss
         if step == "val":
@@ -257,7 +260,7 @@ def make_trainer(
 
 
 def make_architecture(cfg: Model):
-    hparams = cfg.model_dump(exclude={"method"})
+    hparams = cfg.model_dump(exclude={"method", "autoencoder"})
     sequence_model = partial(SequenceModel, **hparams)
     match cfg.method:
         case "linear":
