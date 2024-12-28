@@ -1,3 +1,4 @@
+import os
 from functools import partial
 
 import torch
@@ -239,16 +240,18 @@ def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
         callbacks.append(checkpoint_callback)
     logger = TensorBoardLogger(save_dir=cfg.filepaths.data.results.logs)
     logger = logger if cfg.log else False
+    num_nodes = int(os.environ.get("SLURM_JOB_NUM_NODES", 1))
+    print(f"Number of nodes: {num_nodes}")
     trainer = Trainer(
         logger=logger,
         callbacks=callbacks,
         accelerator="auto",
-        devices=-1,
-        # num_nodes=4,  # TODO get from environment
+        devices=1,
+        num_nodes=num_nodes,
         strategy="auto",
         log_every_n_steps=cfg.logging.log_every_n_steps,
         fast_dev_run=cfg.fast_dev_run,
-        check_val_every_n_epoch=1,
+        limit_val_batches=0,
         enable_checkpointing=checkpoint,
         **cfg.trainer.model_dump(),
     )
