@@ -23,7 +23,7 @@ def make_params(trial: optuna.Trial, cfg: Config):
     cfg.optimizer.momentum = trial.suggest_float(**hparams.optimizer.momentum)
     cfg.optimizer.weight_decay = trial.suggest_float(**hparams.optimizer.weight_decay)
     cfg.trainer.max_epochs = trial.suggest_int(**hparams.trainer.max_epochs)
-    # cfg.trainer.swa_lrs = trial.suggest_float(**hparams.trainer.swa_lrs)
+    cfg.trainer.swa_lrs = trial.suggest_float(**hparams.trainer.swa_lrs)
     return cfg
 
 

@@ -109,16 +109,12 @@ class Network(LightningModule):
         self.save_hyperparameters(logger=False)
         self.model = make_architecture(cfg=cfg.model)
         self.criterion = nn.CrossEntropyLoss(reduction="none", ignore_index=-100)
-        self.optimizer = SGD(self.parameters(), **cfg.optimizer.dict())
+        self.optimizer = SGD(self.parameters(), **cfg.optimizer.model_dump())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
         self.propensity = cfg.experiment.analysis == "propensity"
         self.auroc = AUROC(
-            num_classes=cfg.model.output_dim,
-            task="multiclass",
-            ignore_index=-100,
-            average="none",
+            num_classes=cfg.model.output_dim, task="multiclass", ignore_index=-100
         )
-        self.sync_dist = self.trainer.world_size > 1
 
     def forward(self, inputs):
         return self.model(inputs)
@@ -187,10 +183,7 @@ class AutoEncoderClassifer(LightningModule):
         self.cros_entropy = nn.CrossEntropyLoss(ignore_index=-100)
         self.mse = nn.MSELoss()
         self.auroc = AUROC(
-            num_classes=cfg.model.output_dim,
-            task="multiclass",
-            ignore_index=-100,
-            average="none",
+            num_classes=cfg.model.output_dim, task="multiclass", ignore_index=-100
         )
 
     def forward(self, inputs):
@@ -287,5 +280,5 @@ def make_architecture(cfg: Model):
             return Transformer(num_heads=4, **hparams)
         case _:
             raise ValueError(
-                f"Invalid method '{cfg.method}'. Choose from: 'rnn', 'lstm', 'mlp', 'autoencoder', or 'transformer'"
+                f"Invalid method '{cfg.method}'. Choose from: 'linear', 'rnn', 'lstm', 'mlp', or 'transformer'"
             )
