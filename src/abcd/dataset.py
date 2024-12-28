@@ -88,9 +88,7 @@ class ABCDDataModule(LightningDataModule):
         self.val = val
         self.test = test
         self.loader = partial(
-            DataLoader,
-            **cfg.dataloader.dict(),
-            collate_fn=collate_fn,
+            DataLoader, **cfg.dataloader.model_dump(), collate_fn=collate_fn
         )
         if not isinstance(train, FileDataset):
             self.columns = train.columns

@@ -212,6 +212,8 @@ class AutoEncoderClassifer(LightningModule):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         inputs, labels, _ = batch
         outputs = self(inputs)
+        outputs = outputs.view(-1, outputs.size(-1))
+        labels = labels.view(-1)
         return outputs, labels
 
     def configure_optimizers(self):

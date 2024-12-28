@@ -116,7 +116,7 @@ def format_questions() -> pl.Expr:
 
 def make_variable_df(cfg: Config, columns: list[list[str]]) -> pl.DataFrame:
     dfs: list[pl.DataFrame] = []
-    for cols, (filename, metadata) in zip(columns, cfg.features.dict().items()):
+    for cols, (filename, metadata) in zip(columns, cfg.features.model_dump().items()):
         table_metadata = {"table": [], "dataset": [], "respondent": [], "variable": []}
         for column in cols:
             table_metadata["table"].append(filename)

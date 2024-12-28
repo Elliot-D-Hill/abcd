@@ -51,7 +51,7 @@ def get_datasets(cfg: Config) -> list[pl.LazyFrame]:
     transforms["led_l_adi"] = make_adi
     transforms["abcd_p_demo"] = make_demographics
     dfs = []
-    files = cfg.features.dict().items()
+    files = cfg.features.model_dump().items()
     for filename, metadata in files:
         df = pl.scan_csv(
             source=cfg.filepaths.data.raw.features / f"{filename}.csv",
@@ -114,7 +114,7 @@ def get_brain_features(cfg: Config):
     }
     return [
         column
-        for name, features in cfg.features.dict().items()
+        for name, features in cfg.features.model_dump().items()
         for column in features["columns"]
         if name in brain_datasets
     ]
@@ -156,7 +156,7 @@ def collect_datasets(cfg: Config) -> pl.LazyFrame:
         pl.col(cfg.index.event).replace_strict(EVENTS_TO_VALUES, default=None),
     )
     features = get_features(cfg=cfg)
-    df = df.select(features).drop_nulls(cfg.index.event)
+    df = df.select(features)
     return df
 
 
@@ -187,7 +187,7 @@ def transform_dataset(cfg: Config) -> pl.LazyFrame:
 def make_mri_dataset(cfg: Config, df: pl.DataFrame) -> None:
     by = [cfg.index.split, cfg.index.sample_id]
     for (split, sample), group in df.group_by(by, maintain_order=True):
-        label = group.drop_in_place(cfg.index.label).to_numpy().astype(np.float32)
+        label = group.drop_in_place(cfg.index.label).to_numpy().astype(np.int32)
         features = (
             group.drop(cfg.index.split, cfg.index.sample_id)
             .to_numpy()
