@@ -82,7 +82,12 @@ def tune_model(cfg: Config, data_module):
         min_resource=cfg.hyperparameters.trainer.max_epochs["low"],
         max_resource=cfg.hyperparameters.trainer.max_epochs["high"],
     )
+    storage = optuna.storages.RDBStorage(
+        url="sqlite:///:memory:",
+        engine_kwargs={"pool_size": 20, "connect_args": {"timeout": 10}},
+    )
     study = optuna.create_study(
+        storage=storage,
         sampler=sampler,
         pruner=pruner,
         direction="minimize",
