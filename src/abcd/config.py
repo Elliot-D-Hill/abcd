@@ -224,13 +224,13 @@ class Config(BaseModel):
 
 
 def update_paths(new_path: Path, cfg: Config) -> Config:
-    analytic = deepcopy(cfg.filepaths.data.analytic.dict())
+    analytic = deepcopy(cfg.filepaths.data.analytic.model_dump())
     for name, path in analytic.items():
         new_filepath = new_path / "analytic" / path
         new_filepath.parent.mkdir(parents=True, exist_ok=True)
         analytic[name] = new_filepath
     cfg.filepaths.data.analytic = Splits(**analytic)
-    results = deepcopy(cfg.filepaths.data.results.dict())
+    results = deepcopy(cfg.filepaths.data.results.model_dump())
     for name, path in results.copy().items():
         if isinstance(path, Path):
             new_filepath = new_path / "results" / path
