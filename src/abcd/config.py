@@ -125,6 +125,7 @@ class Processed(BaseModel):
     features: Path
     dataset: Path
     metadata: Path
+    variables: Path
     subject_metadata: Path
 
 

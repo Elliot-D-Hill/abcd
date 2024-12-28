@@ -20,10 +20,10 @@ def predict(x, model):
 
 def make_shap_values(cfg: Config, data_module: ABCDDataModule):
     model = get_model(cfg, best=True)
-    test_batches = data_module.test_dataloader()
-    val_batches = data_module.val_dataloader()
-    inputs = torch.cat([batch[0] for batch in test_batches])
-    background = torch.cat([batch[0] for batch in val_batches])
+    test_loader = data_module.test_dataloader()
+    val_loader = data_module.val_dataloader()
+    inputs = torch.cat([batch[0] for batch in test_loader])
+    background = torch.cat([batch[0] for batch in val_loader])
     inputs = inputs.to("mps:0")
     background = background.to("mps:0")
     model.to("mps:0")
@@ -51,7 +51,6 @@ def bootstrap_shap_values(df: pl.DataFrame, n_bootstraps: int):
 
 
 def format_shap_values(shap_values, inputs, cfg: Config, columns: list[str]):
-    # metadata = pl.read_excel("data/supplement/tables/supplementary_table_1.xlsx")
     df = pl.DataFrame(shap_values, schema=columns)
     inputs = pl.DataFrame(inputs, schema=columns)
     # these two columns' values got flipped somehow so flip them back
@@ -59,7 +58,7 @@ def format_shap_values(shap_values, inputs, cfg: Config, columns: list[str]):
     df = df.unpivot(value_name="shap_value")
     inputs = inputs.unpivot(value_name="feature_value")
     df = df.with_columns(inputs["feature_value"])
-    metadata = pl.read_parquet("data/supplement/tables/supplementary_table_1.parquet")
+    metadata = pl.read_parquet(cfg.filepaths.data.processed.variables)
     df = df.join(metadata, on="variable")
     df.write_parquet(cfg.filepaths.data.results.shap.shap_values)
 
@@ -84,7 +83,7 @@ def shap_coef(cfg: Config):
     df.write_parquet(cfg.filepaths.data.results.shap.shap_coef)
 
 
-def group_shap_coef(groups: list[str], cfg: Config):
+def bootstrapped_group_shap(groups: list[str], cfg: Config):
     shap = pl.read_parquet(cfg.filepaths.data.results.shap.shap_values)
     data: list[pl.DataFrame] = []
     for (dataset, respondent), group in shap.group_by(groups):
@@ -101,6 +100,6 @@ def estimate_importance(cfg: Config, data_module: ABCDDataModule):
     shap_values, inputs = make_shap_values(cfg=cfg, data_module=data_module)
     format_shap_values(shap_values, inputs, cfg=cfg, columns=data_module.columns)
     # shap_coef(cfg=cfg)
-    groups = ["dataset", "respondent"]
+    # groups = ["dataset", "respondent"]
     # group_shap_values(groups=groups, cfg=cfg)
-    group_shap_coef(groups=groups, cfg=cfg)
+    # bootstrapped_group_shap(groups=groups, cfg=cfg)

@@ -30,13 +30,8 @@ def make_subject_metadata(cfg: Config, df: pl.LazyFrame) -> pl.LazyFrame:
     df = (
         df.with_columns(sex, race, age, adi, year)
         .sort(cfg.index.sample_id, pl.col(cfg.index.event).cast(pl.Enum(EVENTS)))
-        .with_columns(
-            cs.numeric()
-            .cast(pl.Int32)
-            .fill_null(strategy="forward")
-            .over("src_subject_id")
-        )
-        .with_columns(cs.numeric().shrink_dtype())
+        .with_columns(cs.numeric().fill_null(strategy="forward").over("src_subject_id"))
+        .with_columns(cs.numeric().cast(pl.Int32))
     )
     return df
 
@@ -205,4 +200,4 @@ def make_variable_metadata(cfg: Config, columns: list[list[str]]) -> None:
     df = df.with_columns(rename_questions(), rename_datasets())
     df = df.unique(subset=["variable"])
     df = df.sort("dataset", "respondent", "variable")
-    df.write_parquet("data/raw/variable_metadata.parquet")
+    df.write_parquet("data/processed/variables.parquet")

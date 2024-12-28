@@ -243,14 +243,15 @@ def make_tables(cfg: Config):
     # metric_table = pl.scan_parquet("data/results/generalize/metric_summary.parquet")
     # quartile_metrics = quartile_metric_table(df=metric_table)
     # demographic_metrics = demographic_metric_table(df=metric_table)
-    # variable_metadata = pl.read_csv("data/raw/variable_metadata.csv")
+
     # aces = pl.read_excel("data/raw/ABCD_ACEs.xlsx")
 
     # cross_tab.write_excel("data/tables/table_1.xlsx")
     # quartile_metrics.write_excel("data/tables/table_2.xlsx")
     # demographic_metrics.write_excel("data/tables/table_3.xlsx")
 
-    # variable_metadata.write_excel("data/supplement/tables/supplementary_table_1.xlsx")
+    variable_metadata = pl.read_parquet("data/processed/variables.parquet")
+    variable_metadata.write_excel("data/supplement/tables/supplementary_table_1.xlsx")
     # aces.write_excel("data/supplement/tables/supplementary_table_2.xlsx")
     # metric_table.write_excel("data/supplement/tables/supplementary_table_3.xlsx")
 
