@@ -24,7 +24,7 @@ def make_params(trial: optuna.Trial, cfg: Config):
 
 
 def get_model(cfg: Config, best: bool):
-    if True:  # FIXME cfg.model.autoencoder
+    if cfg.experiment.analysis in {"mri_all", "questions_mri_all"}:
         model_class = AutoEncoderClassifer
     else:
         model_class = Network
