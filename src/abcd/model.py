@@ -182,6 +182,7 @@ class AutoEncoderClassifer(LightningModule):
             norm_layer=nn.LayerNorm,
             dropout=cfg.model.dropout,
         )
+        cfg.model.input_dim = cfg.model.hidden_dim
         self.model = make_architecture(cfg=cfg.model)
         self.optimizer = SGD(self.parameters(), **cfg.optimizer.model_dump())
         self.cros_entropy = nn.CrossEntropyLoss()
@@ -190,7 +191,7 @@ class AutoEncoderClassifer(LightningModule):
     def forward(self, inputs):
         encoding = self.encoder(inputs)
         decoding = self.decoder(encoding)
-        output = self.linear(encoding)
+        output = self.model(encoding)
         return output, decoding
 
     def step(self, step: str, batch: tuple[torch.Tensor, ...]):
@@ -243,7 +244,7 @@ def make_trainer(cfg: Config, checkpoint: bool) -> Trainer:
         callbacks=callbacks,
         accelerator="auto",
         devices=-1,
-        num_nodes=4,  # TODO get from environment
+        # num_nodes=4,  # TODO get from environment
         strategy="auto",
         log_every_n_steps=cfg.logging.log_every_n_steps,
         fast_dev_run=cfg.fast_dev_run,
