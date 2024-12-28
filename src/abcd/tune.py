@@ -8,7 +8,7 @@ from torchmetrics.functional.classification import multiclass_auroc
 
 from abcd.config import Config
 from abcd.dataset import ABCDDataModule
-from abcd.model import AutoEncoderClassifer, Network, make_trainer
+from abcd.model import Network, make_trainer
 
 
 def make_params(trial: optuna.Trial, cfg: Config):
@@ -23,14 +23,15 @@ def make_params(trial: optuna.Trial, cfg: Config):
     cfg.optimizer.momentum = trial.suggest_float(**hparams.optimizer.momentum)
     cfg.optimizer.weight_decay = trial.suggest_float(**hparams.optimizer.weight_decay)
     cfg.trainer.max_epochs = trial.suggest_int(**hparams.trainer.max_epochs)
+    # cfg.trainer.swa_lrs = trial.suggest_float(**hparams.trainer.swa_lrs)
     return cfg
 
 
 def get_model(cfg: Config, best: bool):
-    if cfg.experiment.analysis in {"mri_all", "questions_mri_all"}:
-        model_class = AutoEncoderClassifer
-    else:
-        model_class = Network
+    # if cfg.experiment.analysis in {"mri_all", "questions_mri_all"}:
+    #     model_class = AutoEncoderClassifer
+    # else:
+    model_class = Network
     if best:
         filepath = cfg.filepaths.data.results.best_model
         return model_class.load_from_checkpoint(checkpoint_path=filepath)
