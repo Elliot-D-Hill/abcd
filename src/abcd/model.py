@@ -6,9 +6,8 @@ from lightning import LightningModule, Trainer
 from lightning.pytorch.callbacks import (
     ModelCheckpoint,
     RichProgressBar,
+    StochasticWeightAveraging,
 )
-
-# StochasticWeightAveraging,
 from lightning.pytorch.loggers import TensorBoardLogger
 from torch import nn
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
@@ -114,8 +113,12 @@ class Network(LightningModule):
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
         self.propensity = cfg.experiment.analysis == "propensity"
         self.auroc = AUROC(
-            num_classes=cfg.model.output_dim, task="multiclass", ignore_index=-100
+            num_classes=cfg.model.output_dim,
+            task="multiclass",
+            ignore_index=-100,
+            average="none",
         )
+        self.sync_dist = self.trainer.world_size > 1
 
     def forward(self, inputs):
         return self.model(inputs)
@@ -129,7 +132,7 @@ class Network(LightningModule):
         loss = loss.mean()
         if step == "val":
             self.auroc(outputs, labels)
-            self.log("val_auroc", self.auroc, prog_bar=True, sync_dist=True)
+            self.log("val_auroc", self.auroc, prog_bar=True)
         self.log(f"{step}_loss", loss, prog_bar=True, sync_dist=True)
         return loss
 
@@ -184,7 +187,10 @@ class AutoEncoderClassifer(LightningModule):
         self.cros_entropy = nn.CrossEntropyLoss(ignore_index=-100)
         self.mse = nn.MSELoss()
         self.auroc = AUROC(
-            num_classes=cfg.model.output_dim, task="multiclass", ignore_index=-100
+            num_classes=cfg.model.output_dim,
+            task="multiclass",
+            ignore_index=-100,
+            average="none",
         )
 
     def forward(self, inputs):
@@ -200,7 +206,7 @@ class AutoEncoderClassifer(LightningModule):
         loss += self.mse(inputs, decoding)
         if step == "val":
             self.auroc(outputs, labels)
-            self.log("val_auroc", self.auroc, prog_bar=True, sync_dist=True)
+            self.log("val_auroc", self.auroc, prog_bar=True)
         self.log(f"{step}_loss", loss, prog_bar=True, sync_dist=True)
         return loss
 
@@ -245,8 +251,8 @@ def make_trainer(
             save_top_k=0,
         )
         callbacks.append(checkpoint_callback)
-    # swa_callback = StochasticWeightAveraging(swa_lrs=cfg.trainer.swa_lrs)
-    # callbacks.append(swa_callback)
+    swa_callback = StochasticWeightAveraging(swa_lrs=cfg.trainer.swa_lrs)
+    callbacks.append(swa_callback)
     logger = TensorBoardLogger(save_dir=cfg.filepaths.data.results.logs)
     logger = logger if cfg.log else False
     num_nodes = int(os.environ.get("SLURM_JOB_NUM_NODES", 1))
