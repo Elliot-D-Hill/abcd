@@ -6,8 +6,9 @@ from lightning import LightningModule, Trainer
 from lightning.pytorch.callbacks import (
     ModelCheckpoint,
     RichProgressBar,
-    StochasticWeightAveraging,
 )
+
+# StochasticWeightAveraging,
 from lightning.pytorch.loggers import TensorBoardLogger
 from torch import nn
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
@@ -244,8 +245,8 @@ def make_trainer(
             save_top_k=0,
         )
         callbacks.append(checkpoint_callback)
-    swa_callback = StochasticWeightAveraging(swa_lrs=cfg.trainer.swa_lrs)
-    callbacks.append(swa_callback)
+    # swa_callback = StochasticWeightAveraging(swa_lrs=cfg.trainer.swa_lrs)
+    # callbacks.append(swa_callback)
     logger = TensorBoardLogger(save_dir=cfg.filepaths.data.results.logs)
     logger = logger if cfg.log else False
     num_nodes = int(os.environ.get("SLURM_JOB_NUM_NODES", 1))
