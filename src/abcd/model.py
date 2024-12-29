@@ -169,7 +169,7 @@ class AutoEncoderClassifer(LightningModule):
         )
         cfg.model.input_dim = cfg.model.hidden_dim
         # cfg.model.num_layers = 1
-        # cfg.model.method = "mlp"
+        cfg.model.method = "mlp"
         self.model = make_architecture(cfg=cfg.model)
         self.optimizer = SGD(self.parameters(), **cfg.optimizer.model_dump())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
@@ -211,7 +211,8 @@ class AutoEncoderClassifer(LightningModule):
         self, batch: tuple[torch.Tensor, ...], batch_idx, dataloader_idx=0
     ) -> tuple[torch.Tensor, torch.Tensor]:
         inputs, labels, _ = batch
-        outputs = self(inputs)
+        encoding = self.encoder(inputs)
+        outputs = self(encoding)
         outputs = outputs.view(-1, outputs.size(-1))
         labels = labels.view(-1)
         return outputs, labels

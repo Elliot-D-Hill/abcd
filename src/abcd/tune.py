@@ -76,7 +76,7 @@ class Objective:
             path = cfg.filepaths.data.results.checkpoints / "best.ckpt"
             trainer.save_checkpoint(path)
         if trainer.is_global_zero:
-            text += f"Trial: {trial.number}, Loss: {val_loss}, Mean AUROC: {val_auroc}"
+            text += f"Trial: {trial.number}, Loss: {val_loss:.2f}, Mean AUROC: {val_auroc:.2f}"
             auroc = auc(trainer, model, self.data_module)
             text += f", AUROC: {auroc}"
             print(text)
