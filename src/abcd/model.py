@@ -169,7 +169,7 @@ class AutoEncoderClassifer(LightningModule):
         )
         cfg.model.input_dim = cfg.model.hidden_dim
         # cfg.model.num_layers = 1
-        cfg.model.method = "mlp"
+        # cfg.model.method = "mlp"
         self.model = make_architecture(cfg=cfg.model)
         self.optimizer = SGD(self.parameters(), **cfg.optimizer.model_dump())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
