@@ -57,7 +57,8 @@ class Objective:
     def __init__(self, cfg: Config, data_module: ABCDDataModule):
         self.cfg = cfg
         self.data_module = data_module
-        self.best_val_loss = float("inf")
+        self.minimize = cfg.tuner.direction == "minimize"
+        self.best_value = float("inf") if self.minimize else float("-inf")
 
     def __call__(self, trial: optuna.Trial):
         cfg = make_params(trial, cfg=self.cfg)
@@ -67,10 +68,16 @@ class Objective:
         trainer.fit(model, datamodule=self.data_module)
         val_loss = trainer.callback_metrics["val_loss"].item()
         val_auroc = trainer.callback_metrics["val_auroc"].item()
+        if self.minimize:
+            save_checkpoint = val_loss < self.best_value
+            current_value = val_loss
+        else:
+            save_checkpoint = val_auroc > self.best_value
+            current_value = val_auroc
         text = ""
-        if val_loss < self.best_val_loss:
+        if save_checkpoint:
             text += "Lowest loss yet: "
-            self.best_val_loss = val_loss
+            self.best_value = current_value
             path = cfg.filepaths.data.results.checkpoints / "best.ckpt"
             trainer.save_checkpoint(path)
         if trainer.is_global_zero:
@@ -78,7 +85,7 @@ class Objective:
             auroc = auc(trainer, model, self.data_module)
             text += f", AUROC: {auroc}"
             print(text)
-        return val_loss
+        return val_auroc  # val_loss
 
 
 def tune_model(cfg: Config, data_module):
@@ -95,7 +102,7 @@ def tune_model(cfg: Config, data_module):
         storage=storage,
         sampler=sampler,
         pruner=pruner,
-        direction="minimize",
+        direction="maximize",  # "minimize",
         study_name="ABCD",
     )
     objective = Objective(cfg=cfg, data_module=data_module)
