@@ -16,7 +16,6 @@ def make_params(trial: optuna.Trial, cfg: Config):
     hparams = cfg.hyperparameters
     method_index = trial.suggest_int(**hparams.model.method)
     cfg.model.method = cfg.tuner.methods[method_index]
-    cfg.model.autoencoder = False  # trial.suggest_int(**hparams.model.autoencoder)
     cfg.model.hidden_dim = trial.suggest_int(**hparams.model.hidden_dim)
     cfg.model.num_layers = trial.suggest_int(**hparams.model.num_layers)
     cfg.model.dropout = trial.suggest_float(**hparams.model.dropout)
@@ -29,8 +28,7 @@ def make_params(trial: optuna.Trial, cfg: Config):
 
 
 def get_model(cfg: Config, best: bool):
-    # cfg.experiment.analysis in {"mri_all", "questions_mri_all"}:
-    if cfg.model.autoencoder:
+    if cfg.experiment.analysis in {"mri_all", "questions_mri_all"}:
         model_class = AutoEncoderClassifer
     else:
         model_class = Network
