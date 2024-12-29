@@ -156,7 +156,7 @@ def collect_datasets(cfg: Config) -> pl.LazyFrame:
         pl.col(cfg.index.event).replace_strict(EVENTS_TO_VALUES, default=None),
     )
     features = get_features(cfg=cfg)
-    df = df.select(features)
+    df = df.select(cs.by_name(cfg.index.join_on), features)
     return df
 
 
