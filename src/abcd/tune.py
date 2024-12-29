@@ -8,7 +8,8 @@ from torchmetrics.functional.classification import multiclass_auroc
 
 from abcd.config import Config
 from abcd.dataset import ABCDDataModule
-from abcd.model import AutoEncoderClassifer, Network, make_trainer
+from abcd.model import AutoEncoderClassifer, Network
+from abcd.trainer import make_trainer
 
 
 def make_params(trial: optuna.Trial, cfg: Config):

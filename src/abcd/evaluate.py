@@ -16,7 +16,7 @@ from torchmetrics.wrappers import BootStrapper
 from abcd.config import Config
 from abcd.constants import COLUMNS, EVENTS_TO_NAMES
 from abcd.dataset import ABCDDataModule
-from abcd.model import make_trainer
+from abcd.trainer import make_trainer
 from abcd.tune import get_model
 
 IGNORE_INDEX = -100

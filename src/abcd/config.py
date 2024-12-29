@@ -98,6 +98,7 @@ class Hyperparameters(BaseModel):
 
 
 class Evaluate(BaseModel):
+    ignore_index: int
     n_bootstraps: int
 
 
