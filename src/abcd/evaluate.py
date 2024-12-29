@@ -39,10 +39,16 @@ def make_predictions(
         outputs, labels = zip(*predictions)
         outputs = torch.concat(outputs).cpu()
         labels = torch.concat(labels).cpu().int()
-    auc = MulticlassAUROC(num_classes=outputs.shape[-1], ignore_index=IGNORE_INDEX)(
-        outputs, labels
-    )
-    print(f"Mean AUROC: {auc.mean().item()}")
+        outputs = outputs.permute(0, 2, 1)
+        outputs = outputs.flatten(0, 1)
+        labels = labels.flatten(0, 1)
+        ignore = labels != IGNORE_INDEX
+        outputs = outputs[ignore]
+        labels = labels[ignore]
+    auc = MulticlassAUROC(
+        num_classes=outputs.shape[-1], ignore_index=IGNORE_INDEX, average="none"
+    )(outputs, labels)
+    print(f"AUROC: {auc}")
     return outputs, labels
 
 
@@ -57,13 +63,17 @@ def format_metadata(lf: pl.LazyFrame, cfg: Config) -> pl.LazyFrame:
     return lf.filter(pl.col("Split").eq("test"))
 
 
-def format_predictions(cfg: Config, outputs, labels) -> pl.DataFrame:
+def format_predictions(
+    cfg: Config, outputs: torch.Tensor, labels: torch.Tensor
+) -> pl.DataFrame:
     metadata = pl.scan_parquet(cfg.filepaths.data.analytic.metadata)
     test_metadata = format_metadata(lf=metadata, cfg=cfg)
-    df = pl.LazyFrame({"output": outputs.cpu().numpy(), "label": labels.cpu().numpy()})
-    df = df.with_columns(pl.col("output").arr.to_list().alias("output"))
-    df = df.explode("output", "label")
-    df = df.filter(pl.col("label").ne(IGNORE_INDEX))
+    df = pl.LazyFrame(
+        {
+            "output": outputs.cpu().tolist(),
+            "label": labels.cpu().tolist(),
+        }
+    )
     df = pl.concat([test_metadata, df], how="horizontal")
     df = df.with_columns(pl.col("Quartile at t", "Quartile at t+1").add(1))
     df = df.with_columns(
