@@ -75,7 +75,7 @@ class Objective:
             current_value = val_auroc
         text = ""
         if save_checkpoint:
-            text += "Lowest loss yet: "
+            text += "Best value yet: "
             self.best_value = current_value
             path = cfg.filepaths.data.results.checkpoints / "best.ckpt"
             trainer.save_checkpoint(path)
