@@ -60,6 +60,5 @@ def main():
 if __name__ == "__main__":
     is_primary = os.environ.get("IS_PTL_PRIMARY") is None
     os.environ["IS_PTL_PRIMARY"] = "yes"
-    ## code to run on each GPU
     if is_primary:
         main()

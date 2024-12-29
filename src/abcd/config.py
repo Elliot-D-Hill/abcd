@@ -87,7 +87,6 @@ class OptimizerHParams(BaseModel):
 
 
 class TrainerHParams(BaseModel):
-    max_epochs: dict
     swa_lrs: dict
 
 
