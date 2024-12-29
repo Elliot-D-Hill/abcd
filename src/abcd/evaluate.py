@@ -19,8 +19,6 @@ from abcd.dataset import ABCDDataModule
 from abcd.trainer import make_trainer
 from abcd.tune import get_model
 
-IGNORE_INDEX = -100
-
 
 def make_predictions(
     cfg: Config, data_module: ABCDDataModule
@@ -42,11 +40,12 @@ def make_predictions(
         outputs = outputs.permute(0, 2, 1)
         outputs = outputs.flatten(0, 1)
         labels = labels.flatten(0, 1)
-        ignore = labels != IGNORE_INDEX
+        ignore = labels != cfg.evaluation.ignore_index
         outputs = outputs[ignore]
         labels = labels[ignore]
     auc = MulticlassAUROC(
-        num_classes=outputs.shape[-1], ignore_index=IGNORE_INDEX, average="none"
+        num_classes=outputs.shape[-1],
+        average="none",
     )(outputs, labels)
     print(f"AUROC: {auc}")
     return outputs, labels
@@ -170,12 +169,8 @@ def make_metrics(df: pl.DataFrame, n_bootstraps: int) -> pl.DataFrame:
             }
         )
     outputs, labels = get_outputs_labels(df)
-    auroc = MulticlassAUROC(
-        num_classes=outputs.shape[-1], average="none", ignore_index=IGNORE_INDEX
-    )
-    ap = MulticlassAveragePrecision(
-        num_classes=outputs.shape[-1], average="none", ignore_index=IGNORE_INDEX
-    )
+    auroc = MulticlassAUROC(num_classes=outputs.shape[-1], average="none")
+    ap = MulticlassAveragePrecision(num_classes=outputs.shape[-1], average="none")
     bootstrapped_auroc = bootstrap_metric(
         auroc, outputs, labels, n_bootstraps=n_bootstraps
     ).with_columns(pl.lit("AUROC").alias("Metric"))
@@ -206,9 +201,7 @@ def calc_sensitivity_and_specificity(df: pl.DataFrame):
     outputs, labels = get_outputs_labels(df=df)
     min_sensitivity = 0.5
     specificity_metric = MulticlassSpecificityAtSensitivity(
-        num_classes=outputs.shape[-1],
-        min_sensitivity=min_sensitivity,
-        ignore_index=IGNORE_INDEX,
+        num_classes=outputs.shape[-1], min_sensitivity=min_sensitivity
     )
     specificity, threshold = specificity_metric(outputs, labels)
     specificity_df = pl.DataFrame(
@@ -222,9 +215,7 @@ def calc_sensitivity_and_specificity(df: pl.DataFrame):
     )
     min_specificity = 0.5
     sensitivity_metric = MulticlassSensitivityAtSpecificity(
-        num_classes=outputs.shape[-1],
-        min_specificity=min_specificity,
-        ignore_index=IGNORE_INDEX,
+        num_classes=outputs.shape[-1], min_specificity=min_specificity
     )
     sensitivity, threshold = sensitivity_metric(outputs, labels)
     sensitivity_df = pl.DataFrame(
@@ -264,12 +255,10 @@ def evaluate_model(cfg: Config, data_module: ABCDDataModule):
     metrics = metrics.join(prevalence, on=["Variable", "Group", "Quartile at t+1"])
     print(metrics)
     metrics.write_parquet(cfg.filepaths.data.results.eval.metrics)
-    pr = partial(precision_recall_curve, ignore_index=IGNORE_INDEX)
-    pr_curve = grouped_df.map_groups(partial(make_curve, curve=pr, name="PR"))
-    roc_partial = partial(roc, ignore_index=IGNORE_INDEX)
-    roc_curve = grouped_df.map_groups(
-        partial(make_curve, curve=roc_partial, name="ROC")
+    pr_curve = grouped_df.map_groups(
+        partial(make_curve, curve=precision_recall_curve, name="PR")
     )
+    roc_curve = grouped_df.map_groups(partial(make_curve, curve=roc, name="ROC"))
     curves = pl.concat([pr_curve, roc_curve], how="diagonal_relaxed").select(
         ["Metric", "Variable", "Group", "Quartile at t+1", "x", "y"]
     )
