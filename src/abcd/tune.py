@@ -1,10 +1,8 @@
 import optuna
 import polars as pl
-import torch
 from optuna.integration import PyTorchLightningPruningCallback
 from optuna.pruners import HyperbandPruner
 from optuna.samplers import QMCSampler, TPESampler
-from torchmetrics.functional.classification import multiclass_auroc
 
 from abcd.config import Config
 from abcd.dataset import ABCDDataModule
@@ -38,21 +36,6 @@ def get_model(cfg: Config, best: bool):
     return model_class(cfg=cfg)
 
 
-def auc(trainer, model, data_module):
-    predictions = trainer.predict(model, dataloaders=data_module.val_dataloader())
-    if predictions is None:
-        return float("inf")
-    outputs = torch.cat([x[0] for x in predictions])
-    labels = torch.cat([x[1] for x in predictions])
-    return multiclass_auroc(
-        preds=outputs,
-        target=labels,
-        num_classes=outputs.shape[-1],
-        average="none",
-        ignore_index=-100,
-    )
-
-
 class Objective:
     def __init__(self, cfg: Config, data_module: ABCDDataModule):
         self.cfg = cfg
@@ -82,10 +65,8 @@ class Objective:
             trainer.save_checkpoint(path)
         if trainer.is_global_zero:
             text += f"Trial: {trial.number}, Loss: {val_loss:.2f}, Mean AUROC: {val_auroc:.2f}"
-            auroc = auc(trainer, model, self.data_module)
-            text += f", AUROC: {auroc}"
             print(text)
-        return val_auroc  # val_loss
+        return current_value
 
 
 def tune_model(cfg: Config, data_module):
