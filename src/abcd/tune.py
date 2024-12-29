@@ -22,7 +22,6 @@ def make_params(trial: optuna.Trial, cfg: Config):
     cfg.optimizer.lr = trial.suggest_float(**hparams.optimizer.lr)
     cfg.optimizer.momentum = trial.suggest_float(**hparams.optimizer.momentum)
     cfg.optimizer.weight_decay = trial.suggest_float(**hparams.optimizer.weight_decay)
-    cfg.trainer.max_epochs = trial.suggest_int(**hparams.trainer.max_epochs)
     cfg.trainer.swa_lrs = trial.suggest_float(**hparams.trainer.swa_lrs)
     return cfg
 
@@ -91,12 +90,12 @@ class Objective:
 def tune_model(cfg: Config, data_module):
     sampler = QMCSampler(seed=cfg.random_seed)
     pruner = HyperbandPruner(
-        min_resource=cfg.hyperparameters.trainer.max_epochs["low"],
-        max_resource=cfg.hyperparameters.trainer.max_epochs["high"],
+        min_resource=10,
+        max_resource=cfg.trainer.max_epochs,
     )
     storage = optuna.storages.RDBStorage(
         url="sqlite:///:memory:",
-        engine_kwargs={"pool_size": 20, "connect_args": {"timeout": 10}},
+        engine_kwargs={"pool_size": 10, "connect_args": {"timeout": 10}},
     )
     study = optuna.create_study(
         storage=storage,
