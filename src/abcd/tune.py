@@ -72,7 +72,7 @@ class Objective:
 def tune_model(cfg: Config, data_module):
     sampler = QMCSampler(seed=cfg.random_seed)
     pruner = HyperbandPruner(
-        min_resource=10,
+        min_resource=cfg.tuner.min_resource,
         max_resource=cfg.trainer.max_epochs,
     )
     storage = optuna.storages.RDBStorage(
