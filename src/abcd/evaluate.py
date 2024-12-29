@@ -39,10 +39,16 @@ def make_predictions(
         outputs, labels = zip(*predictions)
         outputs = torch.concat(outputs).cpu()
         labels = torch.concat(labels).cpu().int()
-    auc = MulticlassAUROC(num_classes=outputs.shape[-1], ignore_index=IGNORE_INDEX)(
-        outputs, labels
-    )
-    print(f"Mean AUROC: {auc.mean().item()}")
+        outputs = outputs.permute(0, 2, 1)
+        outputs = outputs.flatten(0, 1)
+        labels = labels.flatten(0, 1)
+        ignore = labels != IGNORE_INDEX
+        outputs = outputs[ignore]
+        labels = labels[ignore]
+    auc = MulticlassAUROC(
+        num_classes=outputs.shape[-1], ignore_index=IGNORE_INDEX, average="none"
+    )(outputs, labels)
+    print(f"AUROC: {auc}")
     return outputs, labels
 
 
@@ -57,10 +63,17 @@ def format_metadata(lf: pl.LazyFrame, cfg: Config) -> pl.LazyFrame:
     return lf.filter(pl.col("Split").eq("test"))
 
 
-def format_predictions(cfg: Config, outputs, labels) -> pl.DataFrame:
+def format_predictions(
+    cfg: Config, outputs: torch.Tensor, labels: torch.Tensor
+) -> pl.DataFrame:
     metadata = pl.scan_parquet(cfg.filepaths.data.analytic.metadata)
     test_metadata = format_metadata(lf=metadata, cfg=cfg)
-    df = pl.LazyFrame({"output": outputs.cpu().numpy(), "label": labels.cpu().numpy()})
+    df = pl.LazyFrame(
+        {
+            "output": outputs.cpu().tolist(),
+            "label": labels.cpu().tolist(),
+        }
+    )
     df = pl.concat([test_metadata, df], how="horizontal")
     df = df.with_columns(pl.col("Quartile at t", "Quartile at t+1").add(1))
     df = df.with_columns(
@@ -94,7 +107,6 @@ def get_predictions(cfg: Config, data_module: ABCDDataModule) -> pl.DataFrame:
         df.write_parquet(cfg.filepaths.data.results.predictions)
     else:
         df = pl.read_parquet(cfg.filepaths.data.results.predictions)
-    df = df.filter(pl.col("label").ne(IGNORE_INDEX))
     return df
 
 
@@ -158,7 +170,9 @@ def make_metrics(df: pl.DataFrame, n_bootstraps: int) -> pl.DataFrame:
             }
         )
     outputs, labels = get_outputs_labels(df)
-    auroc = MulticlassAUROC(num_classes=outputs.shape[-1], average="none")
+    auroc = MulticlassAUROC(
+        num_classes=outputs.shape[-1], average="none", ignore_index=IGNORE_INDEX
+    )
     ap = MulticlassAveragePrecision(
         num_classes=outputs.shape[-1], average="none", ignore_index=IGNORE_INDEX
     )
@@ -250,10 +264,12 @@ def evaluate_model(cfg: Config, data_module: ABCDDataModule):
     metrics = metrics.join(prevalence, on=["Variable", "Group", "Quartile at t+1"])
     print(metrics)
     metrics.write_parquet(cfg.filepaths.data.results.eval.metrics)
-    pr_curve = grouped_df.map_groups(
-        partial(make_curve, curve=precision_recall_curve, name="PR")
+    pr = partial(precision_recall_curve, ignore_index=IGNORE_INDEX)
+    pr_curve = grouped_df.map_groups(partial(make_curve, curve=pr, name="PR"))
+    roc_partial = partial(roc, ignore_index=IGNORE_INDEX)
+    roc_curve = grouped_df.map_groups(
+        partial(make_curve, curve=roc_partial, name="ROC")
     )
-    roc_curve = grouped_df.map_groups(partial(make_curve, curve=roc, name="ROC"))
     curves = pl.concat([pr_curve, roc_curve], how="diagonal_relaxed").select(
         ["Metric", "Variable", "Group", "Quartile at t+1", "x", "y"]
     )
