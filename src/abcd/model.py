@@ -181,8 +181,8 @@ class AutoEncoderClassifer(LightningModule):
         )
         self.save_hyperparameters()
 
-    def forward(self, encodings):
-        return self.model(encodings)
+    def forward(self, encoding):
+        return self.model(encoding)
 
     def step(self, step: str, batch: tuple[torch.Tensor, ...]):
         inputs, labels, _ = batch
@@ -233,7 +233,9 @@ def make_architecture(cfg: Model, input_dim: int | None = None):
     sequence_model = partial(SequenceModel, **hparams)
     match cfg.method:
         case "linear":
-            return nn.Linear(in_features=cfg.input_dim, out_features=cfg.output_dim)
+            return nn.Linear(
+                in_features=hparams["input_dim"], out_features=cfg.output_dim
+            )
         case "mlp":
             return MultiLayerPerceptron(**hparams)
         case "rnn":
