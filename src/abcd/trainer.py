@@ -4,8 +4,9 @@ from lightning import Trainer
 from lightning.pytorch.callbacks import (
     ModelCheckpoint,
     RichProgressBar,
-    StochasticWeightAveraging,
 )
+
+# StochasticWeightAveraging,
 from lightning.pytorch.loggers import TensorBoardLogger
 
 from abcd.config import Config
@@ -25,8 +26,8 @@ def make_callbacks(cfg: Config, checkpoint: bool, callbacks: list | None = None)
             save_top_k=0,
         )
         callbacks.append(checkpoint_callback)
-    swa_callback = StochasticWeightAveraging(swa_lrs=cfg.trainer.swa_lrs)
-    callbacks.append(swa_callback)
+    # swa_callback = StochasticWeightAveraging(swa_lrs=cfg.trainer.swa_lrs)
+    # callbacks.append(swa_callback)
     return callbacks
 
 
