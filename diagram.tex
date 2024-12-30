@@ -10,7 +10,7 @@
     line/.style={draw, -stealth, line width=1pt}]
 
 % Data Preprocessing
-\node[box, fill=blue!15] (data) at (0,0) {Yearly psycosocial and\\neurodevelopmental data};
+\node[box, fill=blue!15] (data) at (0,0) {Yearly psychosocial and\\neurodevelopmental data};
 \node[box, fill=blue!15, below left=of data, xshift=-0.5cm] (prep) {Normalize predictors\\and impute missing data};
 \node[box, fill=blue!15, below right=of data, xshift=0.5cm] (factor) {Factor analysis on CBCL\\to generate p-factors\\\& bin into quartiles};
 \node[box, fill=blue!15, below=2cm of $(prep)!0.5!(factor)$] (split) {Split participants into\\training, validation,\\\& test sets};

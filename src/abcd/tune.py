@@ -1,3 +1,4 @@
+import numpy as np
 import optuna
 import polars as pl
 from optuna.integration import PyTorchLightningPruningCallback
@@ -40,8 +41,7 @@ class Objective:
     def __init__(self, cfg: Config, data_module: ABCDDataModule):
         self.cfg = cfg
         self.data_module = data_module
-        self.minimize = cfg.tuner.direction == "minimize"
-        self.best_value = float("inf") if self.minimize else float("-inf")
+        self.best_value = float("inf")
 
     def __call__(self, trial: optuna.Trial):
         cfg = make_params(trial, cfg=self.cfg)
@@ -50,23 +50,18 @@ class Objective:
         trainer = make_trainer(cfg=cfg, checkpoint=False, callbacks=[pruning_callback])
         trainer.fit(model, datamodule=self.data_module)
         val_loss = trainer.callback_metrics["val_loss"].item()
+        val_loss = float("inf") if np.isnan(val_loss) else val_loss
         val_auroc = trainer.callback_metrics["val_auroc"].item()
-        if self.minimize:
-            save_checkpoint = val_loss < self.best_value
-            current_value = val_loss
-        else:
-            save_checkpoint = val_auroc > self.best_value
-            current_value = val_auroc
         text = ""
-        if save_checkpoint:
-            text += "Best value yet: "
-            self.best_value = current_value
+        if val_loss < self.best_value:
+            text += "Lowest val loss yet: "
+            self.best_value = val_loss
             path = cfg.filepaths.data.results.checkpoints / "best.ckpt"
             trainer.save_checkpoint(path)
         if trainer.is_global_zero:
             text += f"Trial: {trial.number}, Loss: {val_loss:.2f}, Mean AUROC: {val_auroc:.2f}"
             print(text)
-        return current_value
+        return val_loss
 
 
 def tune_model(cfg: Config, data_module):
