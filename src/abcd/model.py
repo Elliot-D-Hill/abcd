@@ -119,9 +119,9 @@ class Network(LightningModule):
         if self.propensity:
             loss = loss * propensity
         loss = loss.mean()
-        if step == "val":
+        if step == "test":
             self.auroc(outputs, labels)
-            self.log("val_auroc", self.auroc, prog_bar=True)
+            self.log("auroc", self.auroc, prog_bar=True)
         self.log(f"{step}_loss", loss, prog_bar=True, sync_dist=True)
         return loss
 
@@ -153,17 +153,25 @@ class Network(LightningModule):
 class AutoEncoderClassifer(LightningModule):
     def __init__(self, cfg: Config):
         super().__init__()
-        self.save_hyperparameters(logger=False)
-        self.encoder = nn.Linear(
-            in_features=cfg.model.input_dim, out_features=cfg.model.hidden_dim
+        self.encoder = nn.Sequential(
+            nn.Linear(
+                in_features=cfg.model.input_dim, out_features=cfg.model.hidden_dim
+            ),
+            nn.ReLU(),
+            nn.Linear(
+                in_features=cfg.model.hidden_dim, out_features=cfg.model.encoding_dim
+            ),
         )
-        self.decoder = nn.Linear(
-            in_features=cfg.model.hidden_dim, out_features=cfg.model.input_dim
+        self.decoder = nn.Sequential(
+            nn.Linear(
+                in_features=cfg.model.encoding_dim, out_features=cfg.model.hidden_dim
+            ),
+            nn.ReLU(),
+            nn.Linear(
+                in_features=cfg.model.hidden_dim, out_features=cfg.model.input_dim
+            ),
         )
-        cfg.model.input_dim = cfg.model.hidden_dim
-        # cfg.model.num_layers = 1
-        # cfg.model.method = "mlp"
-        self.model = make_architecture(cfg=cfg.model)
+        self.model = make_architecture(cfg=cfg.model, input_dim=cfg.model.encoding_dim)
         self.optimizer = SGD(self.parameters(), **cfg.optimizer.model_dump())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
         self.cros_entropy = nn.CrossEntropyLoss(ignore_index=-100)
@@ -171,6 +179,7 @@ class AutoEncoderClassifer(LightningModule):
         self.auroc = AUROC(
             num_classes=cfg.model.output_dim, task="multiclass", ignore_index=-100
         )
+        self.save_hyperparameters()
 
     def forward(self, encodings):
         return self.model(encodings)
@@ -185,9 +194,9 @@ class AutoEncoderClassifer(LightningModule):
         labels = labels.view(-1)
         ce_loss = self.cros_entropy(outputs, labels)
         loss = ce_loss + mse_loss
-        if step == "val":
+        if step == "test":
             self.auroc(outputs, labels)
-            self.log("val_auroc", self.auroc, prog_bar=True)
+            self.log("auroc", self.auroc, prog_bar=True)
         self.log(f"{step}_loss", loss, prog_bar=True, sync_dist=True)
         return loss
 
@@ -219,8 +228,12 @@ class AutoEncoderClassifer(LightningModule):
         return {"optimizer": self.optimizer, "lr_scheduler": scheduler_cfg}
 
 
-def make_architecture(cfg: Model):
-    hparams = cfg.model_dump(exclude={"method", "autoencoder"})
+def make_architecture(cfg: Model, input_dim: int | None = None):
+    if input_dim is not None:
+        hparams = cfg.model_dump(exclude={"input_dim", "method", "encoding_dim"})
+        hparams["input_dim"] = input_dim
+    else:
+        hparams = cfg.model_dump(exclude={"method", "encoding_dim"})
     sequence_model = partial(SequenceModel, **hparams)
     match cfg.method:
         case "linear":

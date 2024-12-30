@@ -53,7 +53,7 @@ def make_trainer(
         log_every_n_steps=cfg.logging.log_every_n_steps,
         fast_dev_run=cfg.fast_dev_run,
         enable_checkpointing=checkpoint,
-        precision="bf16",
+        precision="bf16-mixed",
         plugins=plugins,
         **cfg.trainer.model_dump(exclude={"swa_lrs"}),
     )
