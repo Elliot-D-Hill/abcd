@@ -158,7 +158,7 @@ def bootstrap_metric(metric, outputs, labels, n_bootstraps: int) -> pl.LazyFrame
 
 
 def make_metrics(df: pl.DataFrame, n_bootstraps: int) -> pl.DataFrame:
-    if df.height < 10:
+    if df.height < 20:
         return pl.DataFrame(
             {
                 "Metric": [],
