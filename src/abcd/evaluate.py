@@ -43,11 +43,9 @@ def make_predictions(
         ignore = labels != cfg.evaluation.ignore_index
         outputs = outputs[ignore]
         labels = labels[ignore]
-    auc = MulticlassAUROC(
-        num_classes=outputs.shape[-1],
-        average="none",
-    )(outputs, labels)
-    print(f"AUROC: {auc}")
+    auc = MulticlassAUROC(num_classes=outputs.shape[-1], average="none")
+    auroc = auc(outputs, labels)
+    print(f"AUROC: {auroc}")
     return outputs, labels
 
 

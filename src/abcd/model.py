@@ -190,8 +190,6 @@ class AutoEncoderClassifer(LightningModule):
         decoding = self.decoder(encoding)
         mse_loss = self.mse(inputs, decoding)
         outputs = self(encoding)
-        outputs = outputs.view(-1, outputs.size(-1))
-        labels = labels.view(-1)
         ce_loss = self.cros_entropy(outputs, labels)
         loss = ce_loss + mse_loss
         if step == "test":
@@ -215,8 +213,6 @@ class AutoEncoderClassifer(LightningModule):
         inputs, labels, _ = batch
         encoding = self.encoder(inputs)
         outputs = self(encoding)
-        outputs = outputs.view(-1, outputs.size(-1))
-        labels = labels.view(-1)
         return outputs, labels
 
     def configure_optimizers(self):
