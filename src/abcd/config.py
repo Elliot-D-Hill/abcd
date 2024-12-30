@@ -66,6 +66,7 @@ class Optimizer(BaseModel):
 class Model(BaseModel):
     method: str
     hidden_dim: int
+    encoding_dim: int
     num_layers: int
     dropout: float
     output_dim: int

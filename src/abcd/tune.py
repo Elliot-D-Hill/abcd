@@ -26,7 +26,7 @@ def make_params(trial: optuna.Trial, cfg: Config):
     return cfg
 
 
-def get_model(cfg: Config, best: bool) -> Network | AutoEncoderClassifer:
+def get_model(cfg: Config, best: bool):
     if cfg.experiment.analysis in {"mri_all", "questions_mri_all"}:
         model_class = AutoEncoderClassifer
     else:
@@ -52,7 +52,8 @@ class Objective:
         trainer = make_trainer(cfg=cfg, checkpoint=False, callbacks=[pruning_callback])
         trainer.fit(model, datamodule=self.data_module)
         val_loss = trainer.callback_metrics["val_loss"].item()
-        val_auroc = trainer.callback_metrics["val_auroc"].item()
+        val_loss = float("inf") if np.isnan(val_loss) else val_loss
+        results = trainer.test(model, dataloaders=self.data_module.val_dataloader())
         text = ""
         if (val_loss < self.best_value) and (~np.isnan(val_loss)):
             text += "Lowest val loss yet: "
@@ -60,6 +61,7 @@ class Objective:
             path = cfg.filepaths.data.results.checkpoints / "best.ckpt"
             trainer.save_checkpoint(path)
         if trainer.is_global_zero:
+            val_auroc = results[0]["auroc"]
             text += f"Trial: {trial.number}, Loss: {val_loss:.2f}, Mean AUROC: {val_auroc:.2f}"
             print(text)
         return val_loss
@@ -89,3 +91,4 @@ def tune_model(cfg: Config, data_module):
     study.optimize(func=objective, n_trials=half_trials)
     df = pl.DataFrame(study.trials_dataframe())
     df.write_parquet(cfg.filepaths.data.results.study)
+    return study
