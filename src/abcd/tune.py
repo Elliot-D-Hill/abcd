@@ -52,10 +52,9 @@ class Objective:
         trainer = make_trainer(cfg=cfg, checkpoint=False, callbacks=[pruning_callback])
         trainer.fit(model, datamodule=self.data_module)
         val_loss = trainer.callback_metrics["val_loss"].item()
-        val_loss = float("inf") if np.isnan(val_loss) else val_loss
         val_auroc = trainer.callback_metrics["val_auroc"].item()
         text = ""
-        if val_loss < self.best_value:
+        if (val_loss < self.best_value) and (~np.isnan(val_loss)):
             text += "Lowest val loss yet: "
             self.best_value = val_loss
             path = cfg.filepaths.data.results.checkpoints / "best.ckpt"
