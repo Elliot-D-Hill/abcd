@@ -1,12 +1,9 @@
-from typing import cast
-
 import numpy as np
 import optuna
 import polars as pl
 from optuna.integration import PyTorchLightningPruningCallback
 from optuna.pruners import HyperbandPruner
 from optuna.samplers import QMCSampler, TPESampler
-from torch.utils.checkpoint import checkpoint
 
 from abcd.config import Config
 from abcd.dataset import ABCDDataModule
@@ -30,18 +27,15 @@ def make_params(trial: optuna.Trial, cfg: Config):
 
 
 def get_model(cfg: Config, best: bool) -> Network | AutoEncoderClassifer:
-    model_class = (
-        AutoEncoderClassifer
-        if cfg.experiment.analysis in {"mri_all", "questions_mri_all"}
-        else Network
-    )
+    if cfg.experiment.analysis in {"mri_all", "questions_mri_all"}:
+        model_class = AutoEncoderClassifer
+    else:
+        model_class = Network
     if best:
         filepath = cfg.filepaths.data.results.best_model
         model = model_class.load_from_checkpoint(checkpoint_path=filepath)
     else:
         model = model_class(cfg=cfg)
-        if model_class == AutoEncoderClassifer:
-            model = cast(AutoEncoderClassifer, checkpoint(model))
     return model
 
 
