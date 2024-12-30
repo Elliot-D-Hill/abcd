@@ -53,17 +53,11 @@ class Objective:
         trainer.fit(model, datamodule=self.data_module)
         val_loss = trainer.callback_metrics["val_loss"].item()
         val_loss = float("inf") if np.isnan(val_loss) else val_loss
-        results = trainer.test(model, dataloaders=self.data_module.val_dataloader())
-        text = ""
+        trainer.test(model, dataloaders=self.data_module.val_dataloader())
         if (val_loss < self.best_value) and (~np.isnan(val_loss)):
-            text += "Lowest val loss yet: "
             self.best_value = val_loss
             path = cfg.filepaths.data.results.checkpoints / "best.ckpt"
             trainer.save_checkpoint(path)
-        if trainer.is_global_zero:
-            val_auroc = results[0]["auroc"]
-            text += f"Trial: {trial.number}, Loss: {val_loss:.2f}, Mean AUROC: {val_auroc:.2f}"
-            print(text)
         return val_loss
 
 
