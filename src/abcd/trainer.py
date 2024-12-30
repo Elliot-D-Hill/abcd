@@ -1,6 +1,7 @@
 import os
 
 from lightning import Trainer
+from lightning.fabric.plugins.environments.slurm import SLURMEnvironment
 from lightning.pytorch.callbacks import (
     ModelCheckpoint,
     RichProgressBar,
@@ -38,6 +39,10 @@ def make_trainer(
     logger = TensorBoardLogger(save_dir=cfg.filepaths.data.results.logs)
     logger = logger if cfg.log else False
     num_nodes = int(os.environ.get("SLURM_JOB_NUM_NODES", 1))
+    plugins = []
+    if "SLURM_JOB_ID" in os.environ:
+        print(f"Running in SLURM environment with Job ID: {os.environ['SLURM_JOB_ID']}")
+        plugins.append(SLURMEnvironment())
     trainer = Trainer(
         logger=logger,
         callbacks=callbacks,
@@ -49,6 +54,7 @@ def make_trainer(
         fast_dev_run=cfg.fast_dev_run,
         enable_checkpointing=checkpoint,
         precision="bf16",
+        plugins=plugins,
         **cfg.trainer.model_dump(exclude={"swa_lrs"}),
     )
     return trainer

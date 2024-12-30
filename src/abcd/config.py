@@ -47,7 +47,6 @@ class Trainer(BaseModel):
 
 class Tuner(BaseModel):
     n_trials: int
-    direction: str
     min_resource: int
     methods: dict[int, str]
 

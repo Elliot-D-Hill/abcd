@@ -80,7 +80,7 @@ def tune_model(cfg: Config, data_module):
         storage=storage,
         sampler=sampler,
         pruner=pruner,
-        direction=cfg.tuner.direction,
+        direction="minimize",
         study_name="ABCD",
     )
     objective = Objective(cfg=cfg, data_module=data_module)
