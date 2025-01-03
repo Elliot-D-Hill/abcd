@@ -1,5 +1,15 @@
 # Attribution-NonCommercial-NoDerivatives 4.0 International
 
+The copyrights of this software are owned by Duke University. As such, two licenses for this software are offered: 1. An open-source license under the CC BY-NC-ND 4.0 license for non-commercial academic use. 2. A custom license with Duke University, for commercial use or uses without the CC BY-NC-ND 4.0 license restrictions.
+
+
+As a recipient of this software, you may choose which license to receive the code under. Outside contributions to the Duke-owned code base cannot be accepted unless the contributor transfers the copyright to those changes over to Duke University. To enter a custom license agreement without the the CC BY-NC-ND 4.0 license restrictions, please contact the Digital Innovations department at the Duke Office for Translation & Commercialization (OTC) (https://otc.duke.edu/digital-innovations/#DI-team) at otcquestions@duke.edu with
+
+reference to “OTC File No. 8639 in your email.
+
+
+Please note that this software is distributed AS IS, WITHOUT ANY WARRANTY; and without the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
 > *Creative Commons Corporation (“Creative Commons”) is not a law firm and does not provide legal services or legal advice. Distribution of Creative Commons public licenses does not create a lawyer-client or other relationship. Creative Commons makes its licenses and related information available on an “as-is” basis. Creative Commons gives no warranties regarding its licenses, any material licensed under their terms and conditions, or any related information. Creative Commons disclaims all liability for damages resulting from their use to the fullest extent possible.*
 >
 > ### Using Creative Commons Public Licenses
