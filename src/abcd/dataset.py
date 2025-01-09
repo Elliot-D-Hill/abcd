@@ -17,11 +17,11 @@ def make_tensor_dataset(cfg: Config, dataset: pl.DataFrame):
         cfg.index.sample_id, maintain_order=True, include_key=False
     ):
         labels = df[cfg.index.label].to_torch().long()
-        inputs = df.select(features).to_torch(dtype=pl.Float32)
         if cfg.experiment.analysis == "propensity":
             propensity = df.select(cfg.index.propensity).to_torch(dtype=pl.Float32)
         else:
             propensity = torch.tensor([1.0] * labels.size(0))
+        inputs = df.select(features).to_torch(dtype=pl.Float32)
         sample = (inputs, labels, propensity)
         data.append(sample)
     return data, df.select(features).columns

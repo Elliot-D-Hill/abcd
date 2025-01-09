@@ -32,16 +32,15 @@ def label_transformer(cfg: Config):
     )
 
 
-def apply_transformer(df: pl.DataFrame, cfg: Config) -> pl.DataFrame:
+def apply_transformer(df: pl.DataFrame, cfg: Config, transform) -> pl.DataFrame:
     dfs = []
     for _, event in df.group_by(cfg.index.event):
         train = event.filter(pl.col("split") == "train")
-        transformer = label_transformer(cfg=cfg)
+        transformer = transform(cfg=cfg)
         transformer.fit(train)  # type: ignore
         transformed_group = transformer.transform(event)  # type: ignore
         dfs.append(transformed_group)
     df = pl.concat(dfs)
-    df = df.rename({"factoranalysis0": cfg.index.previous_label})
     return df
 
 
@@ -93,7 +92,8 @@ def make_labels(cfg: Config) -> pl.LazyFrame:
         name=cfg.index.split,
     )
     df = filter_null_rows(frame=df, columns=cs.by_name(cfg.features.mh_p_cbcl.columns))
-    df = apply_transformer(df=df.collect(), cfg=cfg)
+    df = apply_transformer(df=df.collect(), cfg=cfg, transform=label_transformer)
+    df = df.rename({"factoranalysis0": cfg.index.previous_label})
     df = shift_y(df=df, cfg=cfg)
     df = df.shrink_to_fit()
     return df.lazy()

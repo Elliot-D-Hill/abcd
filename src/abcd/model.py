@@ -101,12 +101,16 @@ class Network(LightningModule):
         super().__init__()
         self.save_hyperparameters(logger=False)
         self.model = make_architecture(cfg=cfg.model)
-        self.criterion = nn.CrossEntropyLoss(reduction="none", ignore_index=-100)
+        self.criterion = nn.CrossEntropyLoss(
+            reduction="none", ignore_index=cfg.evaluation.ignore_index
+        )
         self.optimizer = SGD(self.parameters(), **cfg.optimizer.model_dump())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
         self.propensity = cfg.experiment.analysis == "propensity"
         self.auroc = AUROC(
-            num_classes=cfg.model.output_dim, task="multiclass", ignore_index=-100
+            num_classes=cfg.model.output_dim,
+            task="multiclass",
+            ignore_index=cfg.evaluation.ignore_index,
         )
 
     def forward(self, inputs):
@@ -174,10 +178,14 @@ class AutoEncoderClassifer(LightningModule):
         self.model = make_architecture(cfg=cfg.model, input_dim=cfg.model.encoding_dim)
         self.optimizer = SGD(self.parameters(), **cfg.optimizer.model_dump())
         self.scheduler = CosineAnnealingWarmRestarts(self.optimizer, T_0=1, T_mult=1)
-        self.cros_entropy = nn.CrossEntropyLoss(ignore_index=-100)
+        self.cros_entropy = nn.CrossEntropyLoss(
+            ignore_index=cfg.evaluation.ignore_index
+        )
         self.mse = nn.MSELoss()
         self.auroc = AUROC(
-            num_classes=cfg.model.output_dim, task="multiclass", ignore_index=-100
+            num_classes=cfg.model.output_dim,
+            task="multiclass",
+            ignore_index=cfg.evaluation.ignore_index,
         )
         self.save_hyperparameters()
 

@@ -38,11 +38,22 @@ def make_predictions(
         outputs = torch.concat(outputs).cpu()
         labels = torch.concat(labels).cpu().int()
         outputs = outputs.permute(0, 2, 1)
+        labels = labels.flatten(0, 1)
+        outputs = outputs.flatten(0, 1)
+        auc = MulticlassAUROC(
+            num_classes=outputs.shape[-1],
+            average="none",
+            ignore_index=cfg.evaluation.ignore_index,
+        )
+        auroc = auc(outputs, labels)
+        print(f"AUROC: {auroc}")
+        outputs = outputs.permute(0, 2, 1)
         outputs = outputs.flatten(0, 1)
         labels = labels.flatten(0, 1)
         ignore = labels != cfg.evaluation.ignore_index
         outputs = outputs[ignore]
         labels = labels[ignore]
+        pass
     auc = MulticlassAUROC(num_classes=outputs.shape[-1], average="none")
     auroc = auc(outputs, labels)
     print(f"AUROC: {auroc}")
@@ -74,7 +85,7 @@ def format_predictions(
     df = pl.concat([test_metadata, df], how="horizontal")
     df = df.with_columns(pl.col("Quartile at t", "Quartile at t+1").add(1))
     df = df.with_columns(
-        pl.when(pl.col("Quartile at t").eq(3))
+        pl.when(pl.col("Quartile at t").eq(4))
         .then(pl.lit("Persistence"))
         .otherwise(pl.lit("Conversion"))
         .alias("High-risk scenario")

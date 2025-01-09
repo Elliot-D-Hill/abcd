@@ -66,7 +66,7 @@ def aggregate_metrics(analyses: Iterable[tuple[str, str]], subanalysis: str):
         "within_event": "Within-event",
         "across_event": "Across-event",
     }
-    for metric_type in ("curves", "metrics"):  # "sens_spec",
+    for metric_type in ["metrics"]:  # "curves", "sens_spec",
         metrics = []
         for analysis, factor_model in analyses:
             path = f"data/analyses/{factor_model}/{analysis}/results/eval/{metric_type}.parquet"
@@ -200,8 +200,8 @@ def tuning_table():
     return df.collect()
 
 
-def naive_metric_table():
-    df = pl.scan_parquet("data/results/naive/metrics.parquet")
+def naive_metric_table(filepath: str):
+    df = pl.scan_parquet(filepath)
     df = make_metric_table(lf=df)
     predictor_sets = ["previous_p_factor"]
     df = (
@@ -236,13 +236,23 @@ def make_tables(cfg: Config):
     # df = naive_metric_table()
     # df = df.collect()
     # print(df)
+    # df.write_parquet("data/supplement/temp.parquet")
     # df = general_metric_table()
     # df = df.collect()
     # df.write_parquet("data/supplement/tables/supplementary_table_5.parquet")
     # df = pl.scan_parquet("data/results/metrics/metrics.parquet")
     # make_metric_table(df=df, subanalysis="all")
-    # metric_table = pl.scan_parquet("data/results/generalize/metric_summary.parquet")
-    # quartile_metrics = quartile_metric_table(df=metric_table)
+    aggregate_metrics(
+        analyses=[("questions", "within_event")],  # , ("symptoms", "within_event")
+        subanalysis="new",
+    )
+    lf = pl.scan_parquet("data/results/new/metrics.parquet")
+    metric_table = make_metric_table(lf)
+    quartile_metrics = quartile_metric_table(df=metric_table).collect()
+    print(quartile_metrics)
+    pass
+    # quartile_metrics.write_excel("data/tables/table_x.xlsx")
+
     # demographic_metrics = demographic_metric_table(df=metric_table)
 
     # aces = pl.read_excel("data/raw/ABCD_ACEs.xlsx")
@@ -251,14 +261,14 @@ def make_tables(cfg: Config):
     # quartile_metrics.write_excel("data/tables/table_2.xlsx")
     # demographic_metrics.write_excel("data/tables/table_3.xlsx")
 
-    variable_metadata = pl.read_parquet("data/processed/variables.parquet")
-    variable_metadata.write_excel("data/supplement/tables/supplementary_table_1.xlsx")
+    # variable_metadata = pl.read_parquet("data/processed/variables.parquet")
+    # variable_metadata.write_excel("data/supplement/tables/supplementary_table_1.xlsx")
     # aces.write_excel("data/supplement/tables/supplementary_table_2.xlsx")
     # metric_table.write_excel("data/supplement/tables/supplementary_table_3.xlsx")
 
     # cfg = get_config("config.toml", analysis="questions", factor_model="within_event")
-    shap_table = make_shap_table(filepath=cfg.filepaths.data.results.shap.shap_values)
+    # shap_table = make_shap_table(filepath=cfg.filepaths.data.results.shap.shap_values)
     # tune_table = tuning_table()
-    shap_table = shap_table.collect()
-    shap_table.write_excel("data/supplement/tables/supplementary_table_4.xlsx")
+    # shap_table = shap_table.collect()
+    # shap_table.write_excel("data/supplement/tables/supplementary_table_4.xlsx")
     # tune_table.write_excel("data/supplement/tables/supplementary_table_5.xlsx")

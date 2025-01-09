@@ -22,7 +22,8 @@
 \node[box, fill=red!15, below=1.5cm of train] (test) {Evaluate model performance\\ using the test set};
 \node[box, fill=gray!15, right=1.0cm of test] (shap) {Estimate SHAP values};
 \node[box, fill=red!15, below=1.5cm of test] (stratify) {Stratify by p-factor risk quartile:\\\begin{tabular}{c}Conversion (1st-3rd $\to$ 4th)\\Persistence (4th $\to$ 4th)\\Agnostic (1st-4th $\to$ 4th)\end{tabular}};
-\node[box, fill=red!15, right=of stratify, below=of shap] (demo) {Stratify by demographics\\(e.g., gender, race, SES)};
+\node[box, fill=red!15, right=1.0cm of stratify] (demo) {Stratify by demographics\\(e.g., gender, race, SES)};
+\node[box, fill=red!15, left=1.0cm of stratify] (predictor) {Stratify by predictor set\\(e.g., questionnaires or MRI)};
 
 % Sensitivity Analysis
 \node[box, fill=brown!15, right=1.0cm of split] (site) {Split sampling sites into\\training, validation, and test sets\\to evaluate model generalization};
@@ -50,6 +51,7 @@
 \draw [line] (train) -- (test);
 \draw [line] (test) -- (stratify);
 \draw [line] (test) -- (demo);
+\draw [line] (test) -- (predictor);
 \draw [line] (factormodel) -- (factor);
 \draw [line] (test) -- (shap);
 \draw [line] (site) -- (split);
