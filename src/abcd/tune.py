@@ -17,6 +17,7 @@ def make_params(trial: optuna.Trial, cfg: Config):
     method_index = trial.suggest_int(**hparams.model.method)
     cfg.model.method = cfg.tuner.methods[method_index]
     cfg.model.hidden_dim = trial.suggest_int(**hparams.model.hidden_dim)
+    cfg.model.encoding_dim = trial.suggest_int(**hparams.model.encoding_dim)
     cfg.model.num_layers = trial.suggest_int(**hparams.model.num_layers)
     cfg.model.dropout = trial.suggest_float(**hparams.model.dropout)
     cfg.optimizer.lr = trial.suggest_float(**hparams.optimizer.lr)

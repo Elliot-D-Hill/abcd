@@ -75,6 +75,7 @@ class Model(BaseModel):
 
 class ModelHParams(BaseModel):
     hidden_dim: dict
+    encoding_dim: dict
     num_layers: dict
     dropout: dict
     method: dict
