@@ -137,6 +137,6 @@ data_copy/
 .vscode
 notebooks/
 logs/
-*config.toml
+# *config.toml
 run.sh
 models/
