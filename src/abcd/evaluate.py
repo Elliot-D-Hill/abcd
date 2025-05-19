@@ -34,6 +34,10 @@ def make_predictions(
         model.to(cfg.device)
         trainer = make_trainer(cfg=cfg, checkpoint=False)
         predictions = trainer.predict(model, dataloaders=data_module.test_dataloader())
+        if predictions is None:
+            raise ValueError(
+                "trainer.predict returned None. Check your model and dataloader."
+            )
         outputs, labels = zip(*predictions)
         outputs = torch.concat(outputs).cpu()
         labels = torch.concat(labels).cpu().int()

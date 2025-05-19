@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from itertools import product
 from pathlib import Path
 
 import polars as pl
@@ -222,26 +223,26 @@ def naive_metric_table(filepath: str):
 
 
 def make_tables(cfg: Config):
-    # cross_tab = cross_tabulation()
-    # analyses = product(cfg.experiment.analyses, cfg.experiment.factor_models)
-    # aggregate_metrics(cfg=cfg, analyses=analyses, subanalysis="all")
-    # generalize = [
-    #     ("propensity", "within_event"),
-    #     ("site", "within_event"),
-    #     ("questions", "within_event"),
-    # ]
-    # aggregate_metrics(analyses=generalize, subanalysis="generalize")
-    # naive = [("previous_p_factor", "within_event")]
-    # aggregate_metrics(analyses=naive, subanalysis="naive")
+    cross_tab = cross_tabulation()
+    analyses = product(cfg.experiment.analyses, cfg.experiment.factor_models)
+    aggregate_metrics(analyses=analyses, subanalysis="all")
+    generalize = [
+        ("propensity", "within_event"),
+        ("site", "within_event"),
+        ("questions", "within_event"),
+    ]
+    aggregate_metrics(analyses=generalize, subanalysis="generalize")
+    naive = [("previous_p_factor", "within_event")]
+    aggregate_metrics(analyses=naive, subanalysis="naive")
     # df = naive_metric_table()
     # df = df.collect()
     # print(df)
     # df.write_parquet("data/supplement/temp.parquet")
-    # df = general_metric_table()
-    # df = df.collect()
-    # df.write_parquet("data/supplement/tables/supplementary_table_5.parquet")
-    # df = pl.scan_parquet("data/results/metrics/metrics.parquet")
-    # make_metric_table(df=df, subanalysis="all")
+    df = general_metric_table()
+    df = df.collect()
+    df.write_parquet("data/supplement/tables/supplementary_table_5.parquet")
+    df = pl.scan_parquet("data/results/metrics/metrics.parquet")
+    make_metric_table(lf=df)
     aggregate_metrics(
         analyses=[("questions", "within_event")],  # , ("symptoms", "within_event")
         subanalysis="new",
@@ -250,25 +251,26 @@ def make_tables(cfg: Config):
     metric_table = make_metric_table(lf)
     quartile_metrics = quartile_metric_table(df=metric_table).collect()
     print(quartile_metrics)
-    pass
-    # quartile_metrics.write_excel("data/tables/table_x.xlsx")
+    quartile_metrics.write_excel("data/tables/table_x.xlsx")
 
-    # demographic_metrics = demographic_metric_table(df=metric_table)
+    demographic_metrics = demographic_metric_table(df=metric_table)
 
-    # aces = pl.read_excel("data/raw/ABCD_ACEs.xlsx")
+    aces = pl.read_excel("data/raw/ABCD_ACEs.xlsx")
 
-    # cross_tab.write_excel("data/tables/table_1.xlsx")
-    # quartile_metrics.write_excel("data/tables/table_2.xlsx")
-    # demographic_metrics.write_excel("data/tables/table_3.xlsx")
+    cross_tab.write_excel("data/tables/table_1.xlsx")
+    quartile_metrics.write_excel("data/tables/table_2.xlsx")
+    demographic_metrics.collect().write_excel("data/tables/table_3.xlsx")
 
-    # variable_metadata = pl.read_parquet("data/processed/variables.parquet")
-    # variable_metadata.write_excel("data/supplement/tables/supplementary_table_1.xlsx")
-    # aces.write_excel("data/supplement/tables/supplementary_table_2.xlsx")
-    # metric_table.write_excel("data/supplement/tables/supplementary_table_3.xlsx")
+    variable_metadata = pl.read_parquet("data/processed/variables.parquet")
+    variable_metadata.write_excel("data/supplement/tables/supplementary_table_1.xlsx")
+    aces.write_excel("data/supplement/tables/supplementary_table_2.xlsx")
+    metric_table.collect().write_excel(
+        "data/supplement/tables/supplementary_table_3.xlsx"
+    )
 
-    # cfg = get_config("config.toml", analysis="questions", factor_model="within_event")
-    # shap_table = make_shap_table(filepath=cfg.filepaths.data.results.shap.shap_values)
-    # tune_table = tuning_table()
-    # shap_table = shap_table.collect()
-    # shap_table.write_excel("data/supplement/tables/supplementary_table_4.xlsx")
-    # tune_table.write_excel("data/supplement/tables/supplementary_table_5.xlsx")
+    cfg = get_config("config.toml", analysis="questions", factor_model="within_event")
+    shap_table = make_shap_table(filepath=cfg.filepaths.data.results.shap.shap_values)
+    tune_table = tuning_table()
+    shap_table = shap_table.collect()
+    shap_table.write_excel("data/supplement/tables/supplementary_table_4.xlsx")
+    tune_table.write_excel("data/supplement/tables/supplementary_table_5.xlsx")

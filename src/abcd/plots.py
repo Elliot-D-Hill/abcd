@@ -6,6 +6,7 @@ import polars as pl
 import polars.selectors as cs
 import seaborn as sns
 
+from abcd.config import get_config
 from abcd.constants import RISK_MAPPING
 
 FORMAT = "pdf"
@@ -297,15 +298,15 @@ def shap_scatter(lf: pl.LazyFrame):
 
 def plot():
     sns.set_theme(context="paper", style="darkgrid", palette="deep", font_scale=1.5)
-    # cfg = get_config(
-    #     path="config.toml", factor_model="within_event", analysis="questions"
-    # )
+    cfg = get_config(
+        path="config.toml", factor_model="within_event", analysis="questions"
+    )
     # quartile_curves("data/results/all/curves.parquet")
-    # quartile_curves(
-    #     read_path="data/results/metrics/curves.parquet",
-    #     write_path=f"data/figures/figure_2.{FORMAT}",
-    #     predictor_set=["CBCL scales", "Questionnaires"],
-    # )
+    quartile_curves(
+        read_path="data/results/metrics/curves.parquet",
+        write_path=f"data/figures/figure_2.{FORMAT}",
+        predictor_set=["CBCL scales", "Questionnaires"],
+    )
     quartile_curves(
         read_path="data/results/metrics/curves.parquet",
         write_path=f"data/supplement/figures/figure_x.{FORMAT}",
@@ -315,44 +316,44 @@ def plot():
             "Questionnaires, Data-Driven MRI",
         ],
     )
-    # quartile_curves(
-    #     read_path="data/results/generalize/curves.parquet",
-    #     write_path=f"data/supplement/figures/supplementary_figure_6.{FORMAT}",
-    #     predictor_set=[
-    #         "Participant Analysis",
-    #         "Site Analysis",
-    #         "Propensity Score Weighting",
-    #     ],
-    # )
-    # analysis_comparison()
-    # shap_values = pl.scan_parquet(cfg.filepaths.data.results.shap.shap_values)
-    # abs_shap_sum(shap_values, filepath=f"data/figures/figure_3.{FORMAT}")
-    # shap_scatter(shap_values)
-    # cfg = get_config(
-    #     path="config.toml", factor_model="within_event", analysis="symptoms"
-    # )
-    # symptom_shap_values = pl.scan_parquet(
-    #     "data/analyses/within_event/symptoms/results/shap_values.csv"
-    # )
-    # shap_plot(
-    #     lf=symptom_shap_values,
-    #     filepath="data/supplement/figures/supplementary_figure_2",
-    #     textwrap_width=75,
-    #     y_axis_label="CBCL syndrome scale",
-    #     figsize=(9, 5),
-    # )
-    # shap_plot(
-    #     lf=shap_values,
-    #     filepath="data/supplement/figures/supplementary_figure_3",
-    #     textwrap_width=80,
-    #     y_axis_label="Question",
-    #     figsize=(14, 8),
-    # )
-    # p_factor_model_comparison()
-    # cfg = get_config(
-    #     path="config.toml", factor_model="within_event", analysis="propensity"
-    # )
-    # shap_values = pl.scan_parquet(cfg.filepaths.data.results.shap.shap_values)
-    # abs_shap_sum(
-    #     shap_values, filepath=f"data/supplement/figures/supplementary_figure_7.{FORMAT}"
-    # )
+    quartile_curves(
+        read_path="data/results/generalize/curves.parquet",
+        write_path=f"data/supplement/figures/supplementary_figure_6.{FORMAT}",
+        predictor_set=[
+            "Participant Analysis",
+            "Site Analysis",
+            "Propensity Score Weighting",
+        ],
+    )
+    analysis_comparison()
+    shap_values = pl.scan_parquet(cfg.filepaths.data.results.shap.shap_values)
+    abs_shap_sum(shap_values, filepath=f"data/figures/figure_3.{FORMAT}")
+    shap_scatter(shap_values)
+    cfg = get_config(
+        path="config.toml", factor_model="within_event", analysis="symptoms"
+    )
+    symptom_shap_values = pl.scan_parquet(
+        "data/analyses/within_event/symptoms/results/shap_values.csv"
+    )
+    shap_plot(
+        lf=symptom_shap_values,
+        filepath="data/supplement/figures/supplementary_figure_2",
+        textwrap_width=75,
+        y_axis_label="CBCL syndrome scale",
+        figsize=(9, 5),
+    )
+    shap_plot(
+        lf=shap_values,
+        filepath="data/supplement/figures/supplementary_figure_3",
+        textwrap_width=80,
+        y_axis_label="Question",
+        figsize=(14, 8),
+    )
+    p_factor_model_comparison()
+    cfg = get_config(
+        path="config.toml", factor_model="within_event", analysis="propensity"
+    )
+    shap_values = pl.scan_parquet(cfg.filepaths.data.results.shap.shap_values)
+    abs_shap_sum(
+        shap_values, filepath=f"data/supplement/figures/supplementary_figure_7.{FORMAT}"
+    )

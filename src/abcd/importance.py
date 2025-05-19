@@ -99,7 +99,7 @@ def bootstrapped_group_shap(groups: list[str], cfg: Config):
 def estimate_importance(cfg: Config, data_module: ABCDDataModule):
     shap_values, inputs = make_shap_values(cfg=cfg, data_module=data_module)
     format_shap_values(shap_values, inputs, cfg=cfg, columns=data_module.columns)
-    # shap_coef(cfg=cfg)
-    # groups = ["dataset", "respondent"]
-    # group_shap_values(groups=groups, cfg=cfg)
-    # bootstrapped_group_shap(groups=groups, cfg=cfg)
+    shap_coef(cfg=cfg)
+    groups = ["dataset", "respondent"]
+    group_shap_values(groups=groups, cfg=cfg)
+    bootstrapped_group_shap(groups=groups, cfg=cfg)
