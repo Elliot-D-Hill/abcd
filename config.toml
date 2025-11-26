@@ -82,7 +82,6 @@ min_resource = 10
 [trainer]
 gradient_clip_val = 1.0
 max_epochs = 50
-swa_lrs = 1e-2
 enable_progress_bar = false
 enable_model_summary = false
 
@@ -102,10 +101,6 @@ num_layers = 2
 output_dim = 4
 
 [hyperparameters]
-[hyperparameters.trainer.swa_lrs]
-name = "swa_lrs"
-low = 1e-5
-high = 1e-2
 [hyperparameters.optimizer.lr]
 name = "lr"
 low = 1e-5

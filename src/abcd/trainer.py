@@ -27,8 +27,6 @@ def make_callbacks(cfg: Config, checkpoint: bool, callbacks: list | None = None)
             save_top_k=0,
         )
         callbacks.append(checkpoint_callback)
-    # swa_callback = StochasticWeightAveraging(swa_lrs=cfg.trainer.swa_lrs)
-    # callbacks.append(swa_callback)
     return callbacks
 
 
@@ -55,6 +53,6 @@ def make_trainer(
         enable_checkpointing=checkpoint,
         precision="bf16-mixed",
         plugins=plugins,
-        **cfg.trainer.model_dump(exclude={"swa_lrs"}),
+        **cfg.trainer.model_dump(),
     )
     return trainer
