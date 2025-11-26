@@ -201,7 +201,7 @@ def make_dataset(cfg: Config) -> None:
     df = transform_dataset(cfg=cfg)
     df = df.filter(pl.col(cfg.index.event).ne(3))
     if cfg.experiment.analysis in {"mri_all", "questions_mri_all"}:
-        df = df.collect(streaming=True)
+        df = df.collect(engine="streaming")
         make_mri_dataset(cfg=cfg, df=df)
     else:
         df = df.collect()

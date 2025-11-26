@@ -130,13 +130,10 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-log.ipynb
+*.ipynb
 data/
-results/
-data_copy/
 .vscode
 notebooks/
 logs/
-# *config.toml
 run.sh
 models/
