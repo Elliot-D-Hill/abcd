@@ -1,6 +1,6 @@
 # The Duke Predictive Model of Adolescent Mental Health (Duke-PMA)
 
-This repository contains the code used to train and evaluate the Duke-PMA developed in [*Prediction of Mental Health Risk in Adolescents*](https://www.nature.com/articles/s41591-025-03560-7) (Hill et al. 2025). Access to data from the [Adolescent Brain Cognitive Development (ABCD) Study](https://abcdstudy.org/) is required to train the model.
+This repository contains the code used to train and evaluate the Duke-PMA developed in [*Prediction of Mental Health Risk in Adolescents*](https://www.nature.com/articles/s41591-025-03560-7) (Hill et al. 2025). To train the model, access to data from the [Adolescent Brain Cognitive Development (ABCD) Study](https://abcdstudy.org/) is required.
 
 ## Installation
 
