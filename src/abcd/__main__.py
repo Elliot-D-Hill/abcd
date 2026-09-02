@@ -1,64 +1,50 @@
-import os
-from itertools import product
+from pathlib import Path
 
-import polars as pl
-import torch
 from lightning import seed_everything
-from sklearn import set_config
-from tqdm import tqdm
 
-from abcd.config import Experiment, get_config
-from abcd.dataset import ABCDDataModule
-from abcd.evaluate import evaluate_model
-from abcd.importance import estimate_importance
-from abcd.metadata import make_metadata
-from abcd.plots import plot
-from abcd.process import get_dataset
-from abcd.tables import make_tables
-from abcd.tune import tune_model
+from .config import get_config
+from .dataset import ABCDDataModule
+from .evaluate import auroc, make_predictions, predict
+from .model import Network
+from .process import make_dataset
+from .trainer import make_trainer
 
 
-def make_tqdm(analyses, cfg: Experiment):
-    return tqdm(analyses, total=len(cfg.analyses) * len(cfg.factor_models))
-
-
-def main():
-    pl.Config().set_tbl_cols(14)
-    set_config(transform_output="polars")
-    cfg = get_config(
-        path="config.toml", factor_model="within_event", analysis="metadata"
+def main() -> None:
+    cfg = get_config(Path("config.toml"))
+    seed_everything(cfg.random_seed, workers=True)
+    splits = make_dataset(cfg)
+    data_module = ABCDDataModule(
+        splits=splits, index=cfg.index, dataloader=cfg.dataloader
     )
-    seed_everything(cfg.random_seed)
-    torch.set_float32_matmul_precision("high")
-    pl.set_random_seed(cfg.random_seed)
-    analyses = product(cfg.experiment.analyses, cfg.experiment.factor_models)
-    experiment = make_tqdm(analyses, cfg=cfg.experiment)
-    for analysis, factor_model in experiment:
-        if not any([cfg.regenerate, cfg.evaluate, cfg.tune, cfg.importance]):
-            continue
-        cfg = get_config(
-            path="config.toml", factor_model=factor_model, analysis=analysis
-        )
-        if cfg.regenerate:
-            make_metadata(cfg=cfg)
-        splits = get_dataset(cfg=cfg)
-        data_module = ABCDDataModule(splits=splits, cfg=cfg)
-        cfg.model.input_dim = data_module.train[0][0].shape[-1]
-        print("Input dimension:", cfg.model.input_dim)
-        if cfg.tune:
-            tune_model(cfg=cfg, data_module=data_module)
-        if cfg.evaluate:
-            evaluate_model(cfg=cfg, data_module=data_module)
-        if cfg.importance:
-            estimate_importance(cfg=cfg, data_module=data_module)
-    if cfg.tables:
-        make_tables(cfg=cfg)
-    if cfg.plot:
-        plot()
+    model = Network(
+        input_dim=data_module.input_dim,
+        model=cfg.model,
+        optimizer=cfg.optimizer,
+        scheduler=cfg.scheduler,
+        ignore_index=cfg.dataloader.ignore_index,
+    )
+    trainer, checkpoint = make_trainer(
+        cfg.trainer, checkpoints=cfg.filepaths.checkpoints
+    )
+    trainer.fit(model, datamodule=data_module)
+    print(f"Best validation loss: {checkpoint.best_model_score:.4f}")
+    outputs, labels = predict(
+        trainer,
+        model,
+        data_module,
+        checkpoint_path=checkpoint.best_model_path,
+        ignore_index=cfg.dataloader.ignore_index,
+    )
+    predictions = make_predictions(
+        splits["test"], index=cfg.index, outputs=outputs, labels=labels
+    )
+    cfg.filepaths.predictions.parent.mkdir(parents=True, exist_ok=True)
+    predictions.write_parquet(cfg.filepaths.predictions)
+    quartile_auroc = auroc(outputs, labels)
+    print(f"Test AUROC by quartile at t+1: {quartile_auroc.tolist()}")
+    print(f"Test AUROC (macro): {quartile_auroc.mean():.4f}")
 
 
 if __name__ == "__main__":
-    is_primary = os.environ.get("IS_PTL_PRIMARY") is None
-    os.environ["IS_PTL_PRIMARY"] = "yes"
-    if is_primary:
-        main()
+    main()

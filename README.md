@@ -4,32 +4,28 @@ This repository contains the code used to train and evaluate the Duke-PMA develo
 
 ## Installation
 
+Requires [uv](https://docs.astral.sh/uv/).
+
 ```bash
 git clone https://github.com/Elliot-D-Hill/abcd.git
+cd abcd
+uv sync
 ```
-
-Within the project directory, create and activate a virtual environment using the environment.yml file:
-
-```bash
-conda env create -f environment.yml
-conda activate venv
-```
-
-Then install the package
-
-```bash
-pip install -e .
-```
-
-The argument `-e` can be omitted if you do not intend to modify the source code, but there's no harm in including it.
 
 ## Usage
 
-Once installed, you can run the package with:
+Place the assembled ABCD dataset at `data/dataset.csv` (one row per subject and event, holding the CBCL syndrome scales, the questionnaire and demographic variables, and the imaging columns), then run:
 
 ```bash
-python -m abcd
+uv run abcd
 ```
+
+The pipeline:
+
+1. Splits subjects 80/10/10 into train, validation, and test. A subject never appears in more than one split.
+2. Builds the outcome. Within each event, a single-factor model of the eight CBCL syndrome scales is fit on the training subjects and its score is binned into quartiles. The label of a row is the quartile at the subject's next observed event.
+3. Keeps the questionnaire and demographic features only (no CBCL scales, no imaging), z-scores and median-imputes them with training-split statistics, and writes `data/analytic/{train,val,test}.parquet`.
+4. Trains the LSTM with the hyperparameters in `config.toml` (the values selected by the tuning study in the paper), keeps the checkpoint with the lowest validation loss, writes the test-set predictions to `data/results/predictions.parquet` (`output` holds the four class logits), and prints the test-set AUROC.
 
 ## Modifying program behavior
 

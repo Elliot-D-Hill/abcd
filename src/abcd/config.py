@@ -1,255 +1,88 @@
-from copy import deepcopy
+import tomllib
 from pathlib import Path
 
-import tomllib
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
-class Experiment(BaseModel):
-    analyses: list[str]
-    analysis: str
-    factor_models: list[str]
-    factor_model: str
+class Frozen(BaseModel):
+    model_config = ConfigDict(frozen=True)
 
 
-class Index(BaseModel):
-    join_on: list[str]
+class Index(Frozen):
     sample_id: str
     event: str
-    label: str
     previous_label: str
+    label: str
     split: str
-    site: str
-    propensity: str
 
 
-class Preprocess(BaseModel):
-    null_cutoff: float
-    columns_to_drop: list[str]
+class Preprocess(Frozen):
+    feature_events: tuple[int, ...]
     splits: dict[str, float]
 
 
-class Dataloader(BaseModel):
+class Columns(Frozen):
+    cbcl: tuple[str, ...]
+    mri: tuple[str, ...]
+    excluded: tuple[str, ...]
+
+
+class Dataloader(Frozen):
     batch_size: int
-    num_workers: int | str
-    pin_memory: bool
-    persistent_workers: bool
-    multiprocessing_context: str | None = None
+    num_workers: int
+    ignore_index: int
 
 
-class Trainer(BaseModel):
-    gradient_clip_val: float
+class Trainer(Frozen):
+    accelerator: str
+    precision: str
     max_epochs: int
-    enable_model_summary: bool
+    gradient_clip_val: float
     enable_progress_bar: bool
+    enable_model_summary: bool
 
 
-class Tuner(BaseModel):
-    n_trials: int
-    min_resource: int
-    methods: dict[int, str]
-
-
-class Logging(BaseModel):
-    checkpoint_every_n_steps: int
-    log_every_n_steps: int
-
-
-class Optimizer(BaseModel):
+class Optimizer(Frozen):
     lr: float
     momentum: float
-    weight_decay: float
     nesterov: bool
+    weight_decay: float
 
 
-class Model(BaseModel):
-    method: str
+class Scheduler(Frozen):
+    factor: float
+    patience: int
+
+
+class Model(Frozen):
     hidden_dim: int
-    encoding_dim: int
     num_layers: int
     dropout: float
     output_dim: int
-    input_dim: int = -1  # set at runtime
 
 
-class ModelHParams(BaseModel):
-    hidden_dim: dict
-    encoding_dim: dict
-    num_layers: dict
-    dropout: dict
-    method: dict
-
-
-class OptimizerHParams(BaseModel):
-    lr: dict
-    momentum: dict
-    weight_decay: dict
-
-
-class Hyperparameters(BaseModel):
-    model: ModelHParams
-    optimizer: OptimizerHParams
-
-
-class Evaluate(BaseModel):
-    ignore_index: int
-    n_bootstraps: int
-
-
-class Dataset(BaseModel):
-    name: str
-    respondent: str
-    columns: list[str]
-
-
-class Splits(BaseModel):
-    path: Path
+class Filepaths(Frozen):
+    dataset: Path
     train: Path
     val: Path
     test: Path
-    metadata: Path
-
-
-class Raw(BaseModel):
-    labels: Path
-    dataset: Path
-    metadata: Path
-    features: Path
-    mri: Path
-    splits: Path
-
-
-class Processed(BaseModel):
-    labels: Path
-    features: Path
-    dataset: Path
-    metadata: Path
-    variables: Path
-    subject_metadata: Path
-
-
-class EvalMetrics(BaseModel):
-    metrics: Path
-    curves: Path
-    sens_spec: Path
-
-
-class Shap(BaseModel):
-    shap_values: Path
-    group_shap_values: Path
-    shap_coef: Path
-    group_shap_coef: Path
-
-
-class Results(BaseModel):
     checkpoints: Path
-    best_model: Path
-    study: Path
-    logs: Path
     predictions: Path
-    eval: EvalMetrics
-    shap: Shap
 
 
-class Data(BaseModel):
-    raw: Raw
-    processed: Processed
-    analytic: Splits
-    results: Results
-
-
-class Filepaths(BaseModel):
-    tables: Path
-    plots: Path
-    data: Data
-
-
-class Features(BaseModel):
-    mh_p_cbcl: Dataset
-    abcd_p_demo: Dataset
-    led_l_adi: Dataset
-    abcd_y_lt: Dataset
-    abcd_aces: Dataset
-    ce_p_fes: Dataset
-    ce_y_fes: Dataset
-    ce_p_nsc: Dataset
-    ce_y_nsc: Dataset
-    ce_y_pm: Dataset
-    ce_p_psb: Dataset
-    ce_y_psb: Dataset
-    ce_y_srpf: Dataset
-    nt_p_stq: Dataset
-    nt_y_st: Dataset
-    ph_p_sds: Dataset
-    su_p_pr: Dataset
-    mh_p_fhx: Dataset
-    mri_y_dti_fa_fs_at: Dataset
-    mri_y_rsfmr_cor_gp_gp: Dataset
-    mri_y_tfmr_sst_csvcg_dsk: Dataset
-    mri_y_tfmr_mid_alrvn_dsk: Dataset
-    mri_y_tfmr_nback_2b_dsk: Dataset
-
-
-class Config(BaseModel):
+class Config(Frozen):
     random_seed: int
-    device: str
-    fast_dev_run: bool
-    regenerate: bool
-    tune: bool
-    log: bool
-    predict: bool
-    evaluate: bool
-    importance: bool
-    plot: bool
-    tables: bool
-    verbose: bool
     index: Index
-    experiment: Experiment
-    filepaths: Filepaths
     preprocess: Preprocess
+    columns: Columns
     dataloader: Dataloader
-    features: Features
     trainer: Trainer
-    tuner: Tuner
-    hyperparameters: Hyperparameters
     optimizer: Optimizer
+    scheduler: Scheduler
     model: Model
-    evaluation: Evaluate
-    logging: Logging
+    filepaths: Filepaths
 
 
-def update_paths(new_path: Path, cfg: Config) -> Config:
-    analytic = deepcopy(cfg.filepaths.data.analytic.model_dump())
-    for name, path in analytic.items():
-        new_filepath = new_path / "analytic" / path
-        new_filepath.parent.mkdir(parents=True, exist_ok=True)
-        analytic[name] = new_filepath
-    cfg.filepaths.data.analytic = Splits(**analytic)
-    results = deepcopy(cfg.filepaths.data.results.model_dump())
-    for name, path in results.copy().items():
-        if isinstance(path, Path):
-            new_filepath = new_path / "results" / path
-            new_filepath.parent.mkdir(parents=True, exist_ok=True)
-            results[name] = new_filepath
-        if (name in ["eval", "shap"]) and isinstance(path, dict):
-            for subkey, subval in list(path.items()):
-                new_filepath = new_path / "results" / name / subval
-                new_filepath.parent.mkdir(parents=True, exist_ok=True)
-                results[name][subkey] = new_filepath
-    cfg.filepaths.data.results = Results(**results)
-    return cfg
-
-
-def get_config(path: str, factor_model: str, analysis: str | None = None) -> Config:
-    with open(path, "rb") as f:
-        data = tomllib.load(f)
-        cfg = Config(**data)
-    if analysis is None:
-        return cfg
-    elif analysis == "metadata":
-        new_path = Path("data/analyses/metadata")
-    else:
-        new_path = Path(f"data/analyses/{factor_model}/{analysis}")
-    cfg.experiment.analysis = analysis
-    cfg.experiment.factor_model = factor_model
-    return update_paths(new_path=new_path, cfg=cfg)
+def get_config(path: Path) -> Config:
+    with path.open("rb") as file:
+        return Config(**tomllib.load(file))

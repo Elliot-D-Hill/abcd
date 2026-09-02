@@ -4,17 +4,38 @@ build-backend = "hatchling.build"
 
 [project]
 name = "abcd"
-version = "0.0.1"
+version = "0.1.0"
 authors = [{ name = "Elliot Hill", email = "elliot.d.hill@duke.edu" }]
 description = "Longitudinal prediction of mental health in children"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.12"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
+dependencies = [
+    "lightning>=2.6.5",
+    "nanook",
+    "polars>=1.44.1",
+    "pydantic>=2.13.5",
+    "scikit-learn>=1.9.0",
+    "torch>=2.14.0",
+    "torchmetrics>=1.9.0",
+]
+
+[project.scripts]
+abcd = "abcd.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/Elliot-D-Hill/abcd"
 Issues = "https://github.com/Elliot-D-Hill/abcd/issues"
+
+[tool.uv.sources]
+nanook = { git = "https://github.com/Elliot-D-Hill/nanook.git" }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.5",
+]

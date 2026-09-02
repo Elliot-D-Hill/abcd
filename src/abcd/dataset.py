@@ -1,105 +1,60 @@
 from functools import partial
 
-import numpy as np
 import polars as pl
 import torch
 from lightning import LightningDataModule
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
-from abcd.config import Config
+from .config import Dataloader, Index
 
-
-def make_tensor_dataset(cfg: Config, dataset: pl.DataFrame):
-    data = []
-    features = pl.exclude(cfg.index.split, cfg.index.label, cfg.index.propensity)
-    for df in dataset.partition_by(
-        cfg.index.sample_id, maintain_order=True, include_key=False
-    ):
-        labels = df[cfg.index.label].to_torch().long()
-        if cfg.experiment.analysis == "propensity":
-            propensity = df.select(cfg.index.propensity).to_torch(dtype=pl.Float32)
-        else:
-            propensity = torch.tensor([1.0] * labels.size(0))
-        inputs = df.select(features).to_torch(dtype=pl.Float32)
-        sample = (inputs, labels, propensity)
-        data.append(sample)
-    return data, df.select(features).columns
+type Sample = tuple[torch.Tensor, torch.Tensor]
 
 
-class TimeSeriesDataset(Dataset):
-    def __init__(self, cfg: Config, data: pl.DataFrame) -> None:
-        self.dataset, self.columns = make_tensor_dataset(cfg=cfg, dataset=data)
-
-    def __len__(self):
-        return len(self.dataset)
-
-    def __getitem__(self, index) -> tuple[torch.Tensor, ...]:
-        features, labels, propensity = self.dataset[index]
-        return features, labels, propensity
-
-
-class FileDataset(Dataset):
-    def __init__(self, cfg: Config, data: list[str]) -> None:
-        self.files = data
-        self.cfg = cfg
-
-    def __len__(self):
-        return len(self.files)
-
-    def __getitem__(self, index) -> tuple[torch.Tensor, ...]:
-        filepath = self.files[index]
-        data = np.load(filepath)
-        features = torch.tensor(data["features"], dtype=torch.float)
-        labels = torch.tensor(data["label"], dtype=torch.long)
-        return features, labels, torch.tensor([1.0] * labels.size(0))
+def make_sequences(frame: pl.DataFrame, index: Index) -> list[Sample]:
+    """One (inputs, labels) pair per subject; the event index stays in as a feature."""
+    sequences = []
+    for subject in frame.partition_by(index.sample_id, maintain_order=True):
+        features = subject.drop(index.sample_id, index.previous_label, index.label)
+        inputs = features.to_torch(dtype=pl.Float32)  # (T, F)
+        labels = subject[index.label].to_torch()  # (T,)
+        sequences.append((inputs, labels))
+    return sequences
 
 
-def collate_fn(batch):
-    features, labels, propensity = zip(*batch)
-    features = pad_sequence(features, batch_first=True, padding_value=0)
-    labels = pad_sequence(labels, batch_first=True, padding_value=-100)
-    propensity = pad_sequence(propensity, batch_first=True, padding_value=torch.nan)
-    return features, labels, propensity
-
-
-def init_datasets(splits: dict[str, pl.DataFrame | list[str]], cfg: Config):
-    match splits["train"], splits["val"], splits["test"]:
-        case list(), list(), list():
-            train = FileDataset(cfg=cfg, data=splits["train"])
-            val = FileDataset(cfg=cfg, data=splits["val"])
-            test = FileDataset(cfg=cfg, data=splits["test"])
-        case pl.DataFrame(), pl.DataFrame(), pl.DataFrame():
-            train = TimeSeriesDataset(cfg=cfg, data=splits["train"])
-            val = TimeSeriesDataset(cfg=cfg, data=splits["val"])
-            test = TimeSeriesDataset(cfg=cfg, data=splits["test"])
-        case _, _, _:
-            raise ValueError("Invalid dataset type")
-    return train, val, test
+def collate(batch: list[Sample], ignore_index: int) -> Sample:
+    inputs, labels = zip(*batch)
+    padded_inputs = pad_sequence(list(inputs), batch_first=True)  # (B, T, F)
+    padded_labels = pad_sequence(
+        list(labels), batch_first=True, padding_value=ignore_index
+    )  # (B, T)
+    return padded_inputs, padded_labels
 
 
 class ABCDDataModule(LightningDataModule):
     def __init__(
-        self, splits: dict[str, pl.DataFrame | list[str]], cfg: Config
+        self, splits: dict[str, pl.DataFrame], index: Index, dataloader: Dataloader
     ) -> None:
         super().__init__()
-        train, val, test = init_datasets(splits=splits, cfg=cfg)
-        self.train = train
-        self.val = val
-        self.test = test
+        self.train = make_sequences(splits["train"], index=index)
+        self.val = make_sequences(splits["val"], index=index)
+        self.test = make_sequences(splits["test"], index=index)
         self.loader = partial(
-            DataLoader, **cfg.dataloader.model_dump(), collate_fn=collate_fn
+            DataLoader,
+            batch_size=dataloader.batch_size,
+            num_workers=dataloader.num_workers,
+            collate_fn=partial(collate, ignore_index=dataloader.ignore_index),
         )
-        if not isinstance(train, FileDataset):
-            self.columns = train.columns
-        else:
-            self.columns = []
 
-    def train_dataloader(self):
+    @property
+    def input_dim(self) -> int:
+        return self.train[0][0].shape[-1]
+
+    def train_dataloader(self) -> DataLoader:
         return self.loader(self.train, shuffle=True, drop_last=True)
 
-    def val_dataloader(self):
-        return self.loader(self.val, shuffle=False)
+    def val_dataloader(self) -> DataLoader:
+        return self.loader(self.val)
 
-    def test_dataloader(self):
-        return self.loader(self.test, shuffle=False)
+    def test_dataloader(self) -> DataLoader:
+        return self.loader(self.test)

@@ -1,99 +1,68 @@
 import polars as pl
-import polars.selectors as cs
-from nanook.preprocess import filter_null_rows
-from nanook.frame import assign_splits
-from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import FactorAnalysis
 from sklearn.impute import SimpleImputer
-from sklearn.pipeline import make_pipeline
+from sklearn.pipeline import Pipeline, make_pipeline
 from sklearn.preprocessing import KBinsDiscretizer, StandardScaler
 
-from abcd.config import Config
-from abcd.constants import EVENTS
+from .config import Index
 
 
-def label_transformer(cfg: Config):
-    pipeline = make_pipeline(
+def make_quartile_pipeline(n_quartiles: int, random_seed: int) -> Pipeline:
+    """Single-factor p-factor score of the CBCL scales, binned into quartiles."""
+    return make_pipeline(
         StandardScaler(),
         SimpleImputer(strategy="mean"),
-        FactorAnalysis(n_components=1, random_state=cfg.random_seed),
+        FactorAnalysis(n_components=1, random_state=random_seed),
         KBinsDiscretizer(
-            n_bins=cfg.model.output_dim,
+            n_bins=n_quartiles,
             encode="ordinal",
             strategy="quantile",
-            random_state=cfg.random_seed,
+            quantile_method="linear",
+            random_state=random_seed,
         ),
     )
-    transformers = [("labels", pipeline, cfg.features.mh_p_cbcl.columns)]
-    return ColumnTransformer(
-        transformers=transformers,
-        remainder="passthrough",
-        verbose_feature_names_out=False,
-    )
 
 
-def apply_transformer(df: pl.DataFrame, cfg: Config, transform) -> pl.DataFrame:
-    dfs = []
-    for _, event in df.group_by(cfg.index.event):
-        train = event.filter(pl.col("split") == "train")
-        transformer = transform(cfg=cfg)
-        transformer.fit(train)  # type: ignore
-        transformed_group = transformer.transform(event)  # type: ignore
-        dfs.append(transformed_group)
-    df = pl.concat(dfs)
-    return df
+def within_event_quartile(
+    event: pl.DataFrame,
+    cbcl: tuple[str, ...],
+    index: Index,
+    n_quartiles: int,
+    random_seed: int,
+) -> pl.DataFrame:
+    """Fit the factor model and quartile cutoffs on this event's training subjects only."""
+    pipeline = make_quartile_pipeline(n_quartiles=n_quartiles, random_seed=random_seed)
+    train = event.filter(pl.col(index.split).eq("train")).select(cbcl)
+    pipeline.fit(train.to_numpy())
+    quartile = pipeline.transform(event.select(cbcl).to_numpy())  # (N, 1)
+    quartile = pl.Series(index.previous_label, quartile[:, 0]).cast(pl.Int64)
+    return event.select(index.sample_id, index.event).with_columns(quartile)
 
 
-def shift_y(df: pl.DataFrame, cfg: Config) -> pl.DataFrame:
-    shift = (
-        pl.col(cfg.index.previous_label)
-        .shift(-1)
-        .over(cfg.index.sample_id)
-        .alias("y_{t+1}")
-    )
-    df = (
-        df.sort(cfg.index.sample_id, pl.col(cfg.index.event).cast(pl.Enum(EVENTS)))
-        .with_columns(shift)
-        .select(
-            cfg.index.split,
-            *cfg.index.join_on,
-            cfg.index.previous_label,
-            cfg.index.label,
+def make_labels(
+    dataset: pl.DataFrame,
+    cbcl: tuple[str, ...],
+    index: Index,
+    n_quartiles: int,
+    random_seed: int,
+) -> pl.DataFrame:
+    """Quartile at t and at the subject's next observed event; rows without a next event are dropped."""
+    quartiles = [
+        within_event_quartile(
+            event,
+            cbcl=cbcl,
+            index=index,
+            n_quartiles=n_quartiles,
+            random_seed=random_seed,
         )
-        .drop_nulls()
+        for _, event in dataset.group_by(index.event)
+    ]
+    next_quartile = (
+        pl.col(index.previous_label).shift(-1).over(index.sample_id).alias(index.label)
     )
-    return df
-
-
-def make_labels(cfg: Config) -> pl.LazyFrame:
-    columns = cfg.index.join_on + cfg.features.mh_p_cbcl.columns
-    sites = pl.scan_csv(cfg.filepaths.data.raw.features / "abcd_y_lt.csv").select(
-        *cfg.index.join_on, cfg.index.site
+    return (
+        pl.concat(quartiles)
+        .sort(index.sample_id, index.event)
+        .with_columns(next_quartile)
+        .drop_nulls(index.label)
     )
-    df = (
-        pl.scan_csv(cfg.filepaths.data.raw.labels)
-        .select(columns)
-        .sort(cfg.index.sample_id, pl.col(cfg.index.event).cast(pl.Enum(EVENTS)))
-    )
-    df = (
-        df.join(sites, on=cfg.index.join_on, how="left")
-        .sort(cfg.index.sample_id, pl.col(cfg.index.event).cast(pl.Enum(EVENTS)))
-        .with_columns(pl.col(cfg.index.site).forward_fill().over(cfg.index.sample_id))
-    )
-    by = (
-        cfg.index.site
-        if cfg.experiment.analysis == cfg.index.site
-        else cfg.index.sample_id
-    )
-    df = assign_splits(
-        frame=df,
-        splits=cfg.preprocess.splits,
-        by=by,
-        name=cfg.index.split,
-    )
-    df = filter_null_rows(frame=df, columns=cs.by_name(cfg.features.mh_p_cbcl.columns))
-    df = apply_transformer(df=df.collect(), cfg=cfg, transform=label_transformer)
-    df = df.rename({"factoranalysis0": cfg.index.previous_label})
-    df = shift_y(df=df, cfg=cfg)
-    df = df.shrink_to_fit()
-    return df.lazy()
